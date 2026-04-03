@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 # Config
 # ---------------------------------------------------------------------------
 
-MODEL_ID       = "google/gemma-4-26B-A4B"
+MODEL_ID       = "google/gemma-4-E2B-it"
 MAX_NEW_TOKENS = 64
 CONTEXT_SIZES  = [512, 1024, 2048, 4096, 8192, 16384]
 BIT_MODES      = [4, 3]     # Test 4-bit first (better quality), then 3-bit
@@ -96,17 +96,21 @@ def build_input(target: int) -> torch.Tensor:
         {"role": "system", "content": "Tu es un assistant expert en ML."},
         {"role": "user",   "content": text},
     ]
+    device = next(model.parameters()).device
     try:
-        return tokenizer.apply_chat_template(
+        res = tokenizer.apply_chat_template(
             msgs, add_generation_prompt=True, return_tensors="pt",
             max_length=target, truncation=True,
-        ).to(GPU)
+        )
+        if isinstance(res, torch.Tensor):
+            return res.to(device)
+        return res.input_ids.to(device)
     except ValueError:
         # Fallback for models without a chat template (e.g. some base models)
         prompt_text = "Tu es un assistant expert en ML.\nUtilisateur: " + text + "\nAssistant:"
         return tokenizer(
             prompt_text, return_tensors="pt", max_length=target, truncation=True
-        ).input_ids.to(GPU)
+        ).input_ids.to(device)
 
 
 def vram_stats():

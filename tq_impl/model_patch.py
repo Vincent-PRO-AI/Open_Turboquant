@@ -29,7 +29,8 @@ from .cache import TurboQuantCache
 
 _ATTENTION_NAMES = (
     "LlamaAttention", "MistralAttention", "Qwen2Attention",
-    "Phi3Attention", "GemmaAttention", "Gemma2Attention",
+    "Phi3Attention", "GemmaAttention", "Gemma2Attention", 
+    "Gemma4Attention", "Gemma4TextAttention",
     "FalconAttention", "GPTNeoXAttention", "OPTAttention",
     "BloomAttention", "GPT2Attention", "CohereAttention",
 )
@@ -40,7 +41,15 @@ _PATCHED = "_tq_patched"
 def _find_attn_layers(model: torch.nn.Module) -> List[Tuple[int, torch.nn.Module]]:
     """Find attention sub-modules paired with layer index."""
     try:
-        layers = model.model.layers
+        # Standard HF models: model.layers or model.language_model.layers
+        layers = getattr(model, 'model', model).layers
+    except AttributeError:
+        try:
+            layers = model.language_model.layers
+        except AttributeError:
+            layers = None
+
+    if layers is not None:
         results = []
         for i, layer in enumerate(layers):
             attn = getattr(layer, 'self_attn', None) or getattr(layer, 'attention', None)
@@ -48,8 +57,6 @@ def _find_attn_layers(model: torch.nn.Module) -> List[Tuple[int, torch.nn.Module
                 results.append((i, attn))
         if results:
             return results
-    except AttributeError:
-        pass
 
     results, seen, idx = [], set(), 0
     for name, module in model.named_modules():
@@ -132,6 +139,7 @@ def _fused_decode(
     num_heads: int,
     num_kv_heads: int,
     scale: float,
+    position_embeddings: Optional[Any] = None,
 ) -> torch.Tensor:
     """
     Single-token fused attention using TurboQuant_prod scoring.
@@ -146,16 +154,32 @@ def _fused_decode(
     k = self_attn.k_proj(hidden_states)
     v = self_attn.v_proj(hidden_states)
 
+    # Support for architecture-specific norms (e.g. Gemma 4)
+    if hasattr(self_attn, "q_norm"): q = self_attn.q_norm(q)
+    if hasattr(self_attn, "k_norm"): k = self_attn.k_norm(k)
+    if hasattr(self_attn, "v_norm"): v = self_attn.v_norm(v)
+
     q = q.view(B, 1, num_heads, head_dim).transpose(1, 2)
     k = k.view(B, 1, num_kv_heads, head_dim).transpose(1, 2)
     v = v.view(B, 1, num_kv_heads, head_dim).transpose(1, 2)
 
-    # RoPE — compatible with both old and new transformers
-    cache_len = cache.get_seq_length(layer_idx)
-    q, k = _apply_rope_compat(self_attn, q, k, cache_len, hidden_states.device)
-
     # Update cache: compress key + store value, NO dequant (real VRAM savings)
     vals = cache.update_compressed(k, v, layer_idx)
+
+    # RoPE — compatible with both old and new transformers
+    # Use position_embeddings if provided (Gemma 4 style)
+    if position_embeddings is not None:
+        # Import apply_rotary_pos_emb from Gemma 4 module
+        try:
+            from transformers.models.gemma4.modeling_gemma4 import apply_rotary_pos_emb as apply_fn
+            q, k = apply_fn(q, k, *position_embeddings)
+        except Exception:
+            # Fallback to standard RoPE calculation if import/apply fails
+            cache_len = cache.get_seq_length(layer_idx)
+            q, k = _apply_rope_compat(self_attn, q, k, cache_len, hidden_states.device)
+    else:
+        cache_len = cache.get_seq_length(layer_idx)
+        q, k = _apply_rope_compat(self_attn, q, k, cache_len, hidden_states.device)
 
     # Fused scores [B, H_q, 1, T] — directly on packed data
     scores = cache.fused_scores(q, layer_idx) * scale
@@ -179,46 +203,53 @@ def _fused_decode(
 # ---------------------------------------------------------------------------
 
 def _make_patched_fwd(original_fwd, layer_idx: int, cache_ref):
-    def patched(self, hidden_states, attention_mask=None, position_ids=None,
-                past_key_value=None, output_attentions=False, use_cache=True,
-                cache_position=None, **kwargs):
-
-        # Resolve TurboQuantCache
-        tq = None
-        # Check past_key_values (new API) first, then past_key_value (legacy)
-        pkv = kwargs.get('past_key_values', past_key_value)
-        if isinstance(pkv, TurboQuantCache):
-            tq = pkv
-        elif cache_ref is not None:
+    def patched(self, *args, **kwargs):
+        # 1. Resolve hidden_states
+        hidden_states = args[0] if len(args) > 0 else kwargs.get('hidden_states')
+        
+        # 2. Resolve TurboQuantCache
+        # Check all possible HF cache argument names
+        tq = kwargs.get('past_key_values', kwargs.get('past_key_value'))
+        if tq is None and len(args) >= 4:
+            # Gemma4/Llama/Mistral: (self, hidden_states, embeddings, mask, past_key_values, ...)
+            tq = args[3]
+            
+        if not isinstance(tq, TurboQuantCache) and cache_ref is not None:
             try:
                 tq = cache_ref()
             except Exception:
                 pass
 
-        # Fused path: single-token decode
-        if (tq is not None and not output_attentions
-                and hidden_states.shape[1] == 1):
+        # 3. Fused path (single-token decode)
+        use_cache = kwargs.get('use_cache', True)
+        output_attentions = kwargs.get('output_attentions', False)
+        
+        if (isinstance(tq, TurboQuantCache) and not output_attentions 
+            and hidden_states is not None and hidden_states.shape[1] == 1):
             hd = getattr(self, 'head_dim', None)
             nh = getattr(self, 'num_heads', None)
-            nkv = getattr(self, 'num_key_value_heads',
-                          getattr(self, 'num_kv_heads', nh))
+            nkv = getattr(self, 'num_key_value_heads', getattr(self, 'num_kv_heads', nh))
             sc = getattr(self, 'scaling', None) or (1.0 / math.sqrt(hd)) if hd else None
 
             if hd and nh and sc is not None:
-                out = _fused_decode(self, hidden_states, attention_mask,
-                                    tq, layer_idx, hd, nh, nkv, sc)
+                # Capture position_embeddings for Gemma 4 (2nd arg)
+                pos_emb = args[1] if len(args) > 1 else kwargs.get('position_embeddings')
+                
+                out = _fused_decode(self, hidden_states, kwargs.get('attention_mask'),
+                                    tq, layer_idx, hd, nh, nkv, sc, pos_emb)
                 return (out, None, tq) if use_cache else (out, None)
 
-        # Fallback: pass the resolved cache correctly
-        # HF may pass cache as 'past_key_values' (new) or 'past_key_value' (legacy)
-        resolved_cache = pkv  # whichever was found above
-        kwargs.pop('past_key_values', None)
-        return original_fwd(
-            self, hidden_states=hidden_states, attention_mask=attention_mask,
-            position_ids=position_ids, past_key_value=resolved_cache,
-            output_attentions=output_attentions, use_cache=use_cache,
-            cache_position=cache_position, **kwargs,
-        )
+        # 4. Fallback: pass the TurboQuantCache correctly to the original forward
+        if isinstance(tq, TurboQuantCache):
+            # Force plural name for recent transformers compatibility
+            kwargs['past_key_values'] = tq
+            # Remove from positional args if present to avoid duplicate argument error
+            if len(args) >= 4:
+                args = list(args)
+                args[3] = tq
+                args = tuple(args)
+
+        return original_fwd(self, *args, **kwargs)
 
     return patched
 

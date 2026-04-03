@@ -21,6 +21,8 @@ from .bitpack import packed_bytes_per_position, fp16_bytes_per_position
 
 
 class TurboQuantCache:
+    is_compileable = False
+    is_initialized = True
     """
     Drop-in HuggingFace KV cache with TurboQuant key compression.
 
@@ -313,8 +315,14 @@ class TurboQuantCache:
     def get_usable_length(self, new_seq_length: int, layer_idx: int = 0) -> int:
         return self.get_seq_length(layer_idx)
 
-    def get_mask_sizes(self, cache_position: torch.Tensor, layer_idx: int = 0) -> Tuple[int, int]:
+    def get_mask_sizes(self, cache_position: torch.Tensor | int, layer_idx: int = 0) -> Tuple[int, int]:
+        if isinstance(cache_position, int):
+            return self.get_seq_length(layer_idx) + cache_position, 0
         return self.get_seq_length(layer_idx) + cache_position.shape[0], 0
+
+    @property
+    def is_compiled(self) -> bool:
+        return False
 
     @property
     def seen_tokens(self) -> int:

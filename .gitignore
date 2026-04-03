@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.pytest_cache/
+.vscode/
+
+# Project-specific
+tq_impl/.codebook_cache/
+check_config.py
+debug_patch_ops.py
+inspect_gemma_small.py
+inspect_signatures.py
+test_64k.py
+test_colossal.py
+generate_docs_plots.py
