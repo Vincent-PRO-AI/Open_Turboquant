@@ -41,10 +41,12 @@ class TurboQuantCache:
         bits:  float = 4.0,
         dtype: torch.dtype = torch.float16,
         seed:  Optional[int] = 42,
+        num_outlier_pairs: int = 4,
     ) -> None:
         self.bits  = bits
         self.dtype = dtype
         self.seed  = seed
+        self.num_outlier_pairs = num_outlier_pairs
 
         self._quantisers: Dict[int, TurboQuantProd] = {}
 
@@ -56,6 +58,10 @@ class TurboQuantCache:
 
         # Values always FP16
         self._values: Dict[int, torch.Tensor] = {}
+
+        # Outlier tracking [Phase 2 quality retention]
+        self._outlier_indices: Dict[int, torch.Tensor] = {}
+        self._outlier_vals: Dict[int, torch.Tensor] = {}
 
         self._compressed: Dict[int, bool] = {}
         self._seen_tokens: int = 0
@@ -73,6 +79,46 @@ class TurboQuantCache:
             )
         return self._quantisers[layer_idx]
 
+    def _extract_and_zero_outliers(self, k: torch.Tensor, layer_idx: int) -> torch.Tensor:
+        if self.num_outlier_pairs <= 0:
+            return k
+
+        B, KVH, T, D = k.shape
+        k_pairs = k.view(B, KVH, T, D // 2, 2)
+
+        if layer_idx not in self._outlier_indices:
+            mags = torch.linalg.vector_norm(k_pairs, dim=-1).mean(dim=(0, 2))
+            outliers = torch.topk(mags, self.num_outlier_pairs, dim=1).indices
+            self._outlier_indices[layer_idx] = outliers
+
+        outliers = self._outlier_indices[layer_idx]
+        idx_exp = outliers.view(1, KVH, 1, self.num_outlier_pairs, 1).expand(B, KVH, T, self.num_outlier_pairs, 2)
+        out_vals = torch.gather(k_pairs, 3, idx_exp).view(B, KVH, T, self.num_outlier_pairs * 2)
+
+        if layer_idx not in self._outlier_vals:
+            self._outlier_vals[layer_idx] = out_vals
+        else:
+            self._outlier_vals[layer_idx] = torch.cat([self._outlier_vals[layer_idx], out_vals], dim=2)
+
+        k_quant = k_pairs.clone()
+        k_quant.scatter_(3, idx_exp, 0.0)
+        return k_quant.view(B, KVH, T, D)
+
+    def _inject_outliers(self, full_keys: torch.Tensor, layer_idx: int) -> torch.Tensor:
+        if self.num_outlier_pairs <= 0 or layer_idx not in self._outlier_indices:
+            return full_keys
+
+        B, KVH, T, D = full_keys.shape
+        k_pairs = full_keys.view(B, KVH, T, D // 2, 2)
+        
+        outliers = self._outlier_indices[layer_idx]
+        out_vals = self._outlier_vals[layer_idx]
+
+        idx_exp = outliers.view(1, KVH, 1, self.num_outlier_pairs, 1).expand(B, KVH, T, self.num_outlier_pairs, 2)
+        out_vals_view = out_vals.view(B, KVH, T, self.num_outlier_pairs, 2)
+        k_pairs.scatter_(3, idx_exp, out_vals_view)
+        return k_pairs.view(B, KVH, T, D)
+
     def _compress_layer(self, layer_idx: int) -> None:
         """Compress prefill raw keys → bit-packed format."""
         if self._compressed.get(layer_idx):
@@ -81,7 +127,8 @@ class TurboQuantCache:
         if raw is None:
             return
         q = self._quantisers[layer_idx]
-        self._packed_keys[layer_idx] = q.quantize(raw)
+        raw_zero = self._extract_and_zero_outliers(raw, layer_idx)
+        self._packed_keys[layer_idx] = q.quantize(raw_zero)
         self._compressed[layer_idx] = True
 
     # ------------------------------------------------------------------
@@ -125,7 +172,8 @@ class TurboQuantCache:
             if not self._compressed.get(layer_idx):
                 self._compress_layer(layer_idx)
 
-            new_pk = q.quantize(key_states)
+            k_zero = self._extract_and_zero_outliers(key_states, layer_idx)
+            new_pk = q.quantize(k_zero)
 
             if layer_idx in self._packed_keys:
                 self._packed_keys[layer_idx] = concat_packed_seq(
@@ -136,6 +184,7 @@ class TurboQuantCache:
 
             # Dequantize MSE-only for standard attention
             full_keys = q.dequantize_mse(self._packed_keys[layer_idx])
+            full_keys = self._inject_outliers(full_keys, layer_idx)
             return full_keys, self._values[layer_idx]
 
     def update_compressed(
@@ -179,7 +228,8 @@ class TurboQuantCache:
             if not self._compressed.get(layer_idx):
                 self._compress_layer(layer_idx)
 
-            new_pk = q.quantize(key_states)
+            k_zero = self._extract_and_zero_outliers(key_states, layer_idx)
+            new_pk = q.quantize(k_zero)
 
             if layer_idx in self._packed_keys:
                 self._packed_keys[layer_idx] = concat_packed_seq(
@@ -223,7 +273,25 @@ class TurboQuantCache:
 
         scores = torch.cat(scores_list, dim=0)
         T_k = pk.packed_idx.shape[2]
-        return scores.reshape(B, H_q, 1, T_k)
+        scores = scores.reshape(B, H_q, 1, T_k)
+
+        # EXACT outlier dot product
+        if self.num_outlier_pairs > 0 and layer_idx in self._outlier_indices:
+            idx = self._outlier_indices[layer_idx]
+            idx_q = idx.repeat_interleave(gqa_ratio, dim=0)
+            
+            q_pairs = query_states.view(B, H_q, 1, D // 2, 2)
+            idx_q_exp = idx_q.view(1, H_q, 1, self.num_outlier_pairs, 1).expand(B, H_q, 1, self.num_outlier_pairs, 2)
+            q_out = torch.gather(q_pairs, 3, idx_q_exp).view(B, H_q, 1, self.num_outlier_pairs * 2)
+            
+            k_out = self._outlier_vals[layer_idx]
+            k_out_rep = k_out.repeat_interleave(gqa_ratio, dim=1)
+            k_out_t = k_out_rep.transpose(-1, -2)
+            
+            outlier_scores = torch.matmul(q_out, k_out_t)
+            scores = scores + outlier_scores
+
+        return scores
 
     # ------------------------------------------------------------------
     # HF compatibility
@@ -259,7 +327,7 @@ class TurboQuantCache:
             if i in self._raw_keys:
                 out.append(self._raw_keys[i])
             elif i in self._packed_keys:
-                out.append(self._quantisers[i].dequantize_mse(self._packed_keys[i]))
+                out.append(self._inject_outliers(self._quantisers[i].dequantize_mse(self._packed_keys[i]), i))
         return out
 
     @property
@@ -274,7 +342,7 @@ class TurboQuantCache:
             if i in self._raw_keys:
                 yield self._raw_keys[i], self._values[i]
             elif i in self._packed_keys:
-                yield self._quantisers[i].dequantize_mse(self._packed_keys[i]), self._values[i]
+                yield self._inject_outliers(self._quantisers[i].dequantize_mse(self._packed_keys[i]), i), self._values[i]
 
     def reorder_cache(self, beam_idx: torch.Tensor) -> None:
         for li in list(self._raw_keys):
@@ -283,6 +351,8 @@ class TurboQuantCache:
             self._packed_keys[li] = reorder_packed(self._packed_keys[li], beam_idx)
         for li in list(self._values):
             self._values[li] = self._values[li].index_select(0, beam_idx)
+        for li in list(self._outlier_vals):
+            self._outlier_vals[li] = self._outlier_vals[li].index_select(0, beam_idx)
 
     def crop(self, max_length: int) -> None:
         for li in list(self._raw_keys):
@@ -301,6 +371,9 @@ class TurboQuantCache:
         for li in list(self._values):
             if self._values[li].shape[2] > max_length:
                 self._values[li] = self._values[li][:, :, :max_length, :]
+        for li in list(self._outlier_vals):
+            if self._outlier_vals[li].shape[2] > max_length:
+                self._outlier_vals[li] = self._outlier_vals[li][:, :, :max_length, :]
 
     def batch_repeat_interleave(self, repeats: int) -> None:
         for li in list(self._raw_keys):
@@ -316,6 +389,8 @@ class TurboQuantCache:
             )
         for li in list(self._values):
             self._values[li] = self._values[li].repeat_interleave(repeats, dim=0)
+        for li in list(self._outlier_vals):
+            self._outlier_vals[li] = self._outlier_vals[li].repeat_interleave(repeats, dim=0)
 
     def batch_select_indices(self, indices: torch.Tensor) -> None:
         for li in list(self._raw_keys):
@@ -324,11 +399,15 @@ class TurboQuantCache:
             self._packed_keys[li] = reorder_packed(self._packed_keys[li], indices)
         for li in list(self._values):
             self._values[li] = self._values[li][indices]
+        for li in list(self._outlier_vals):
+            self._outlier_vals[li] = self._outlier_vals[li][indices]
 
     def reset(self) -> None:
         self._raw_keys.clear()
         self._packed_keys.clear()
         self._values.clear()
+        self._outlier_indices.clear()
+        self._outlier_vals.clear()
         self._compressed.clear()
         self._quantisers.clear()
         self._seen_tokens = 0

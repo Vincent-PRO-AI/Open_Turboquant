@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 # Config
 # ---------------------------------------------------------------------------
 
-MODEL_ID       = "Qwen/Qwen2.5-7B-Instruct"
+MODEL_ID       = "google/gemma-4-26B-A4B"
 MAX_NEW_TOKENS = 64
 CONTEXT_SIZES  = [512, 1024, 2048, 4096, 8192, 16384]
 BIT_MODES      = [4, 3]     # Test 4-bit first (better quality), then 3-bit
@@ -71,9 +71,9 @@ for bits in [2, 3]:
 print(f"\n  Chargement {MODEL_ID} FP16...")
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, trust_remote_code=True)
 model = AutoModelForCausalLM.from_pretrained(
-    MODEL_ID, device_map={"": 0}, dtype=torch.float16,
+    MODEL_ID, device_map="auto", dtype=torch.float16, trust_remote_code=True
 )
 model.eval()
 
@@ -96,10 +96,17 @@ def build_input(target: int) -> torch.Tensor:
         {"role": "system", "content": "Tu es un assistant expert en ML."},
         {"role": "user",   "content": text},
     ]
-    return tokenizer.apply_chat_template(
-        msgs, add_generation_prompt=True, return_tensors="pt",
-        max_length=target, truncation=True,
-    ).to(GPU)
+    try:
+        return tokenizer.apply_chat_template(
+            msgs, add_generation_prompt=True, return_tensors="pt",
+            max_length=target, truncation=True,
+        ).to(GPU)
+    except ValueError:
+        # Fallback for models without a chat template (e.g. some base models)
+        prompt_text = "Tu es un assistant expert en ML.\nUtilisateur: " + text + "\nAssistant:"
+        return tokenizer(
+            prompt_text, return_tensors="pt", max_length=target, truncation=True
+        ).input_ids.to(GPU)
 
 
 def vram_stats():

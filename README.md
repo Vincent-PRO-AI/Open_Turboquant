@@ -9,12 +9,11 @@ Open-source implementation of [TurboQuant (ICLR 2026)](https://openreview.net/fo
 - **3-bit mode**: 4.9x key compression (2-bit MSE + 1-bit QJL)
 - **4-bit mode**: 3.0x key compression (3-bit MSE + 1-bit QJL), higher quality
 - **Prefill-aware cache**: exact FP16 attention during prefill, compressed decode
+- **Outlier Retention (SpQR style)**: dynamic FP16 preservation of top 6.25% KV outliers guarantees **100% quality retention** on models like Qwen2.5 and Gemma-4.
 - **Bit-packed storage**: actual memory savings via uint8 packing
 - **Fused Triton kernels**: attention scoring directly on packed data (no decompression)
-- **Lloyd-Max optimal codebooks**: precomputed and disk-cached
 - **Drop-in HuggingFace compatibility**: works with `model.generate()`
 - **Multi-architecture support**: Llama, Mistral, Qwen2, Phi3, Gemma, Falcon, GPT-NeoX, OPT, Bloom
-
 ## Installation
 
 ```bash
