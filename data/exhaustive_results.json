@@ -1,0 +1,1016 @@
+[
+  {
+    "mode": "baseline",
+    "ctx": 10000,
+    "total_vram_gb": 23.993696689605713,
+    "kv_vram_gb": 3.80706787109375
+  },
+  {
+    "mode": "baseline",
+    "ctx": 20000,
+    "total_vram_gb": 27.663435459136963,
+    "kv_vram_gb": 7.476806640625
+  },
+  {
+    "mode": "baseline",
+    "ctx": 30000,
+    "total_vram_gb": 31.474043369293213,
+    "kv_vram_gb": 11.28741455078125
+  },
+  {
+    "mode": "baseline",
+    "ctx": 40000,
+    "total_vram_gb": 35.14024209976196,
+    "kv_vram_gb": 14.95361328125
+  },
+  {
+    "mode": "baseline",
+    "ctx": 50000,
+    "total_vram_gb": 38.94175577163696,
+    "kv_vram_gb": 18.755126953125
+  },
+  {
+    "mode": "baseline",
+    "ctx": 60000,
+    "total_vram_gb": 42.61704874038696,
+    "kv_vram_gb": 22.430419921875
+  },
+  {
+    "mode": "baseline",
+    "ctx": 70000,
+    "total_vram_gb": 46.40763711929321,
+    "kv_vram_gb": 26.22100830078125
+  },
+  {
+    "mode": "baseline",
+    "ctx": 80000,
+    "total_vram_gb": 50.09385538101196,
+    "kv_vram_gb": 29.9072265625
+  },
+  {
+    "mode": "baseline",
+    "ctx": 90000,
+    "total_vram_gb": 53.87327432632446,
+    "kv_vram_gb": 33.6866455078125
+  },
+  {
+    "mode": "baseline",
+    "ctx": 100000,
+    "total_vram_gb": 57.57066202163696,
+    "kv_vram_gb": 37.384033203125
+  },
+  {
+    "mode": "baseline",
+    "ctx": 110000,
+    "total_vram_gb": 61.33836221694946,
+    "kv_vram_gb": 41.1517333984375
+  },
+  {
+    "mode": "baseline",
+    "ctx": 120000,
+    "total_vram_gb": 65.04746866226196,
+    "kv_vram_gb": 44.86083984375
+  },
+  {
+    "mode": "baseline",
+    "ctx": 130000,
+    "total_vram_gb": 68.80363321304321,
+    "kv_vram_gb": 48.61700439453125
+  },
+  {
+    "mode": "baseline",
+    "ctx": 140000,
+    "total_vram_gb": 72.52427530288696,
+    "kv_vram_gb": 52.337646484375
+  },
+  {
+    "mode": "baseline",
+    "ctx": 150000,
+    "total_vram_gb": 76.26859903335571,
+    "kv_vram_gb": 56.08197021484375
+  },
+  {
+    "mode": "baseline",
+    "ctx": 160000,
+    "total_vram_gb": 80.09580850601196,
+    "kv_vram_gb": 59.9091796875
+  },
+  {
+    "mode": "baseline",
+    "ctx": 170000,
+    "total_vram_gb": 83.73948526382446,
+    "kv_vram_gb": 63.5528564453125
+  },
+  {
+    "mode": "baseline",
+    "ctx": 180000,
+    "total_vram_gb": 87.56077432632446,
+    "kv_vram_gb": 67.3741455078125
+  },
+  {
+    "mode": "baseline",
+    "ctx": 190000,
+    "total_vram_gb": 91.21629190444946,
+    "kv_vram_gb": 71.0296630859375
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 10000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 20000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 30000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 40000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 50000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 60000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 70000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 80000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 90000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 100000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 110000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 120000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 130000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 140000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 150000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 160000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 170000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 180000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 190000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 200000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 210000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 220000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 230000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 240000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 250000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 260000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 270000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 280000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 290000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 300000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 310000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 320000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 330000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 340000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 350000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 360000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 370000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 380000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 390000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 400000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 410000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 420000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 430000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 440000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 450000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 460000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 470000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 480000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 490000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 500000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 510000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 520000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 530000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 540000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 550000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 560000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 570000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 580000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 590000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 600000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 610000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 620000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 630000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 640000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 650000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 660000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 670000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 680000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 690000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 700000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 710000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 720000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 730000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 740000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 750000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 760000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 770000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 780000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 790000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 800000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 810000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 820000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 830000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 840000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 850000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 860000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 870000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 880000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 890000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 900000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 910000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 920000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 930000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 940000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 950000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 960000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 970000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 980000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 990000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1000000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1010000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1020000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1030000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1040000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1050000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1060000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1070000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1080000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1090000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1100000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1110000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1120000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1130000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1140000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1150000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1160000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1170000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1180000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1190000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1200000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1210000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1220000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1230000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1240000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1250000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1260000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1270000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1280000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1290000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1300000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1310000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1320000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1330000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1340000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1350000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1360000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1370000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1380000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1390000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1400000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1410000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1420000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1430000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1440000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1450000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1460000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1470000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1480000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1490000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1500000,
+    "total_vram_gb": 21.713240146636963,
+    "kv_vram_gb": 1.526611328125
+  }
+]

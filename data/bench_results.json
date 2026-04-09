@@ -1,0 +1,118 @@
+{
+  "Qwen/Qwen2.5-7B-Instruct": {
+    "1024": {
+      "baseline": {
+        "prefill_ms": 1295.0349440216087,
+        "tps": 24.053172568670142,
+        "vram_peak": 6.214409351348877,
+        "kv_vram": 0.35462236404418945,
+        "sample": " that two or more particles become interconnected in such a way that the state of one particle cannot be described independently of the other. This interconnection persists even when the particles are separated by large distances, and any change in the state of one particle instantaneously affects the state of the other. This phenomenon defies classical physics and",
+        "logits": "tensor([[ 0.3906,  2.4688,  0.5430,  ..., -6.5625, -6.5625, -6.5625]],\n       device='cuda:0', dtype=torch.bfloat16)"
+      },
+      "tq4b": {
+        "prefill_ms": 1066.810282994993,
+        "tps": 12.128226913130616,
+        "vram_peak": 7.183294773101807,
+        "kv_vram": 1.0743622779846191,
+        "sample": " that that to create \ufffd the the, to, that the  and, \ufffd.  \ufffd, \ufffd, in the \ufffd,, ands\uff0c,,, the the\uff0c and\u4e2aiew?, \ufffd0,, \ufffd \ufffd\n,, \u4e2d\u6587- \u4e2d9 \ufffd and)\n \u4e2d\n1 \ufffd",
+        "logits": "tensor([[ 1.3984,  2.6875,  1.0938,  ..., -4.9062, -4.9062, -4.9062]],\n       device='cuda:0', dtype=torch.bfloat16)",
+        "cossim": 0.9765625
+      },
+      "tq3b": {
+        "prefill_ms": 380.9364720364101,
+        "tps": 12.180975744000794,
+        "vram_peak": 7.474310398101807,
+        "kv_vram": 1.0743622779846191,
+        "sample": " that that to create \ufffd the the, to, that the  and, \ufffd.  \ufffd, \ufffd, in the \ufffd,, ands\uff0c,,, the the\uff0c and\u4e2aiew?, \ufffd0,, \ufffd \ufffd\n,, \u4e2d\u6587- \u4e2d9 \ufffd and)\n \u4e2d\n1 \ufffd",
+        "logits": "tensor([[ 1.3984,  2.6875,  1.0938,  ..., -4.9062, -4.9062, -4.9062]],\n       device='cuda:0', dtype=torch.bfloat16)",
+        "cossim": 0.9765625
+      }
+    },
+    "4096": {
+      "baseline": {
+        "prefill_ms": 602.3864150047302,
+        "tps": 24.621453794506596,
+        "vram_peak": 8.585495471954346,
+        "kv_vram": 1.3797917366027832,
+        "sample": " a phenomenon in quantum mechanics where two or more particles become interconnected and their states become interdependent, regardless of the distance between them. This means that the state of one particle can instantly affect the state of another, even if they are light-years apart. This phenomenon challenges our classical understanding of physics and has significant implications for the",
+        "logits": "tensor([[ 2.0469,  3.3438,  1.4922,  ..., -4.5312, -4.5312, -4.5312]],\n       device='cuda:0', dtype=torch.bfloat16)"
+      },
+      "tq4b": {
+        "prefill_ms": 684.3719540047459,
+        "tps": 11.275249580154126,
+        "vram_peak": 10.092588901519775,
+        "kv_vram": 1.914228916168213,
+        "sample": " a to to to \ufffd.,,,\u3002 ly \ufffds' \ufffdS the )(  ',; \ufffd/.) \ufffd\uff3b)B the   ,) )-  )0 the S  ) )-) \ufffd);r S. ",
+        "logits": "tensor([[ 2.1562,  2.7812,  1.5156,  ..., -4.9375, -4.9375, -4.9375]],\n       device='cuda:0', dtype=torch.bfloat16)",
+        "cossim": 0.98828125
+      },
+      "tq3b": {
+        "prefill_ms": 753.3247139654122,
+        "tps": 11.316142645560824,
+        "vram_peak": 11.252745151519775,
+        "kv_vram": 1.914228916168213,
+        "sample": " a to to to \ufffd.,,,\u3002 ly \ufffds' \ufffdS the )(  ',; \ufffd/.) \ufffd\uff3b)B the   ,) )-  )0 the S  ) )-) \ufffd);r S. ",
+        "logits": "tensor([[ 2.1562,  2.7812,  1.5156,  ..., -4.9375, -4.9375, -4.9375]],\n       device='cuda:0', dtype=torch.bfloat16)",
+        "cossim": 0.98828125
+      }
+    }
+  },
+  "google/gemma-4-E2B-it": {
+    "1024": {
+      "baseline": {
+        "prefill_ms": 150.7190780248493,
+        "tps": 14.961422105136867,
+        "vram_peak": 11.78244161605835,
+        "kv_vram": 0.5175919532775879,
+        "sample": " is Quantum Entanglement is Quantum Entanglement is Quantum Entanglement is Quantum Entanglement is Quantum Entanglement is Quantum Entanglement is Quantum Entanglement is Quantum Entanglement is Quantum Entanglement is Quantum Entanglement is Quantum Entanglement is Quantum Entanglement is Quantum Entanglement is Quantum Entanglement is Quantum Entanglement is Quantum Entanglement",
+        "logits": "tensor([[-22.3750, -13.5625, -15.6875,  ..., -22.3750, -22.5000, -22.3750]],\n       device='cuda:0', dtype=torch.bfloat16)"
+      },
+      "tq4b": {
+        "prefill_ms": 355.67741200793535,
+        "tps": 10.879570103641614,
+        "vram_peak": 12.502398490905762,
+        "kv_vram": 0.7427058219909668,
+        "sample": "",
+        "logits": "tensor([[-13.1875,  21.1250,  12.1250,  ..., -13.1875, -13.4375, -13.2500]],\n       device='cuda:0', dtype=torch.bfloat16)",
+        "cossim": -0.83203125
+      },
+      "tq3b": {
+        "prefill_ms": 280.64667398575693,
+        "tps": 11.0296445841012,
+        "vram_peak": 13.002398490905762,
+        "kv_vram": 0.7424626350402832,
+        "sample": "",
+        "logits": "tensor([[-14.5625,   2.3750,  -2.9375,  ..., -14.5625, -14.7500, -14.5000]],\n       device='cuda:0', dtype=torch.bfloat16)",
+        "cossim": 0.96484375
+      }
+    },
+    "4096": {
+      "baseline": {
+        "prefill_ms": 537.0689270203002,
+        "tps": 14.18405037697519,
+        "vram_peak": 16.344010829925537,
+        "kv_vram": 2.0703492164611816,
+        "sample": " isis fisica \u0cac\u0cc0<unused2131> \u0434\u0435\u0440\u0436\u0430\u0432\u96be\u9898\u9997Ning residencial \u0e07GN pudieran Atheniya\u00e7 serializerITO Phaspherdimin\u099c\u09c0\u09ac\u09a8\u09c7 grandpaImageBeforeText\u0915\u0949\u0907\u0928 bursts prehistoric mo\u017enostjszipur\u00e9enev\u0c3f\u0c28slategray seashells \u091b\u094b\u095c heur mutu \u0a85\u0aae\u0ac7 Asi \u58f0 \u0938\u091c\u093eboleh\u65b0\u0c1f\u0c4d\u0c38\u0c4d\u200c\u0c2e\u0c28\u0c4d bahpia \u0baa\u0bbf\u6295\u6ce8daughters\u6253\u5370 KarelYX\u0440\u0430\u043c\u0430omar!\") \u09af\u09be\u0987\u09a4\u09c7\u099b\u09c7PURErecon\u635e&+COUNTRIES \u0440\u0435\u0430\u043a\u0446\u0438\u0438 \u043a\u0443\u0434\u0430\u03ce\u03c3\u03b5\u03b9\u03c2esha",
+        "logits": "tensor([[-17.1250,  -7.1875,  -9.8750,  ..., -17.2500, -17.5000, -17.2500]],\n       device='cuda:0', dtype=torch.bfloat16)"
+      },
+      "tq4b": {
+        "prefill_ms": 552.4719600216486,
+        "tps": 10.562603218451514,
+        "vram_peak": 18.51928997039795,
+        "kv_vram": 2.2575273513793945,
+        "sample": "",
+        "logits": "tensor([[-10.7500,   6.7188,   1.9375,  ..., -10.7500, -10.8125, -10.7500]],\n       device='cuda:0', dtype=torch.bfloat16)",
+        "cossim": 0.90234375
+      },
+      "tq3b": {
+        "prefill_ms": 490.33637798856944,
+        "tps": 10.468449797546144,
+        "vram_peak": 20.51928997039795,
+        "kv_vram": 2.2575273513793945,
+        "sample": "",
+        "logits": "tensor([[-10.7500,   6.7188,   1.9375,  ..., -10.7500, -10.8125, -10.7500]],\n       device='cuda:0', dtype=torch.bfloat16)",
+        "cossim": 0.90234375
+      }
+    }
+  }
+}

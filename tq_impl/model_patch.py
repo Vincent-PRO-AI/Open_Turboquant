@@ -163,7 +163,7 @@ def _fused_decode(
     k = k.view(B, 1, num_kv_heads, head_dim).transpose(1, 2)
     v = v.view(B, 1, num_kv_heads, head_dim).transpose(1, 2)
 
-    # Update cache: compress key + store value, NO dequant (real VRAM savings)
+    # Update cache: k, v are stored, quantized values returned
     vals = cache.update_compressed(k, v, layer_idx)
 
     # RoPE — compatible with both old and new transformers
@@ -185,8 +185,12 @@ def _fused_decode(
     scores = cache.fused_scores(q, layer_idx) * scale
 
     if attention_mask is not None:
+        # Prevent nan + -inf = nan issues
+        attention_mask = attention_mask.to(scores.dtype)
         scores = scores + attention_mask
 
+    # Stability: clamp scores before softmax
+    scores = torch.clamp(scores, min=-32000, max=32000)
     weights = F.softmax(scores, dim=-1, dtype=torch.float32).to(dtype)
 
     # GQA: repeat KV heads for value matmul

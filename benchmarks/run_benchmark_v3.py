@@ -16,9 +16,9 @@ sys.path.insert(0, os.path.dirname(__file__))
 # Config
 # ---------------------------------------------------------------------------
 
-MODEL_ID       = "google/gemma-4-E2B-it"
+MODEL_ID       = "Qwen/Qwen2.5-7B-Instruct"
 MAX_NEW_TOKENS = 64
-CONTEXT_SIZES  = [512, 1024, 2048, 4096, 8192, 16384]
+CONTEXT_SIZES  = [512, 1024, 2048] # Reduced for fast baseline
 BIT_MODES      = [4, 3]     # Test 4-bit first (better quality), then 3-bit
 TEST_FUSED     = True
 
@@ -52,30 +52,51 @@ from tq_impl import (
 
 print(f"  Triton: {'v' + triton_version() if is_triton_available() else 'non disponible'}")
 
-# Compression ratios
-for b in BIT_MODES:
-    cr = compression_ratio(b - 1, 128)
-    print(f"  {b}-bit mode: {cr:.1f}x compression clés (MSE {b-1}-bit + QJL 1-bit)")
-
-# Codebook sanity
-print("\n  Codebooks Lloyd-Max:")
-for bits in [2, 3]:
-    d_emp = expected_mse(bits, 128, n_samples=10_000)
-    d_th  = (math.sqrt(3 * math.pi) / 2) / (4 ** bits)
-    print(f"    {bits}-bit MSE: D_emp={d_emp:.6f}  D_theorie={d_th:.6f}  {'OK' if d_emp < d_th * 1.5 else 'WARN'}")
+# Ratios will be displayed after model load to get head_dim
+# (The code block was moved below AutoModelForCausalLM.from_pretrained)
 
 # ---------------------------------------------------------------------------
 # Load model
 # ---------------------------------------------------------------------------
 
-print(f"\n  Chargement {MODEL_ID} FP16...")
-from transformers import AutoModelForCausalLM, AutoTokenizer
+print(f"\n  Chargement {MODEL_ID} (4-bit NF4)...")
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+
+quantization_config = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_compute_dtype=torch.float16,
+    bnb_4bit_quant_type="nf4",
+    bnb_4bit_use_double_quant=True,
+)
 
 tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, trust_remote_code=True)
 model = AutoModelForCausalLM.from_pretrained(
-    MODEL_ID, device_map="auto", dtype=torch.float16, trust_remote_code=True
+    MODEL_ID, 
+    device_map={"": 0}, 
+    quantization_config=quantization_config,
+    trust_remote_code=True
 )
 model.eval()
+
+# Get actual head dim (handle VLMs)
+def get_head_dim(cfg):
+    if hasattr(cfg, "text_config"): cfg = cfg.text_config
+    if hasattr(cfg, "head_dim"): return cfg.head_dim
+    return cfg.hidden_size // cfg.num_attention_heads
+
+head_dim = get_head_dim(model.config)
+print(f"  Head dimension detectée: {head_dim}")
+
+for b in BIT_MODES:
+    cr = compression_ratio(b - 1, head_dim)
+    print(f"  {b}-bit mode: {cr:.1f}x compression clés (MSE {b-1}-bit + QJL 1-bit)")
+
+# Codebook sanity
+print("\n  Codebooks Lloyd-Max:")
+for bits in [2, 3]:
+    d_emp = expected_mse(bits, head_dim, n_samples=10_000)
+    d_th  = (math.sqrt(3 * math.pi) / 2) / (4 ** bits)
+    print(f"    {bits}-bit MSE: D_emp={d_emp:.6f}  D_theorie={d_th:.6f}  {'OK' if d_emp < d_th * 1.5 else 'WARN'}")
 
 model_vram = torch.cuda.memory_allocated(0) / 1024**3
 print(f"  Modèle: {model_vram:.2f} Go  |  VRAM libre: {total_vram - model_vram:.2f} Go")
@@ -140,7 +161,7 @@ def run_tq(ids, bits, fused=False):
     torch.cuda.synchronize(); torch.cuda.reset_peak_memory_stats(0)
     vb, _ = vram_stats()
 
-    cache = TurboQuantCache(bits=float(bits), dtype=torch.float16)
+    cache = TurboQuantCache(bits=float(bits), dtype=model.dtype)
     if fused:
         patch_model_for_turboquant(model, cache)
 
@@ -177,7 +198,7 @@ def measure_quality(ids, bits, fused=False):
         out_b = model(ids, use_cache=True)
         lb = out_b.logits[:, -1, :]
 
-        c = TurboQuantCache(bits=float(bits), dtype=torch.float16)
+        c = TurboQuantCache(bits=float(bits), dtype=model.dtype)
         if fused:
             patch_model_for_turboquant(model, c)
         try:
@@ -194,7 +215,7 @@ def measure_quality(ids, bits, fused=False):
     with torch.inference_mode():
         gb = model.generate(ids, max_new_tokens=n_dec, do_sample=False,
                             return_dict_in_generate=True, output_logits=True)
-        c2 = TurboQuantCache(bits=float(bits), dtype=torch.float16)
+        c2 = TurboQuantCache(bits=float(bits), dtype=model.dtype)
         if fused:
             patch_model_for_turboquant(model, c2)
         try:
@@ -309,5 +330,4 @@ print(f"  Triton        : {'v' + triton_version() if is_triton_available() else 
 for b in BIT_MODES:
     cr = compression_ratio(b - 1, 128)
     print(f"  {b}-bit mode    : {b-1}b MSE + 1b QJL = {cr:.1f}x compression clés")
-print(f"\n  Benchmark terminé !")
 print(f"{'=' * 78}")

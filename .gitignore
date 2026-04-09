@@ -1,15 +1,30 @@
-__pycache__/
-*.pyc
-.ipynb_checkpoints/
-.pytest_cache/
-.vscode/
 
-# Project-specific
-tq_impl/.codebook_cache/
-check_config.py
-debug_patch_ops.py
-inspect_gemma_small.py
-inspect_signatures.py
-test_64k.py
-test_colossal.py
-generate_docs_plots.py
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+
+# Results & Assets
+# (Optionally uncomment if you want to exclude them, 
+# but for a showcase, keeping small JSONs/PNGs is often good)
+# data/
+# assets/
+
+# IDE files
+.vscode/
+.idea/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+tq_impl.egg-info/
+dist/
+build/

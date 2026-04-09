@@ -1,460 +1,209 @@
 """
-tq_impl/cache.py  —  v3 (bit-packed, prefill-aware)
-====================================================
+tq_impl/cache.py  —  v9 (Static Buffers, D=256, Value-Quant Fix)
+==============================================================
 
-Two-phase KV cache using bit-packed TurboQuant keys.
-
-Phase 1 (Prefill):  Raw FP16 keys → exact attention, zero quality loss
-Phase 2 (Decode):   Bit-packed keys → 4.9x (3b) or 3.0x (4b) key compression
-
-Compatible with HuggingFace transformers >= 4.50 (DynamicCache API).
+Production PolarQuant KV Cache for TurboQuant.
+Uses pre-allocated static buffers for O(1) updates.
+Synchronizes Radii, Packed Angles, QJL residuals and Value Quantization.
 """
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, List, Optional, Tuple
-
+from typing import Any, Dict, List, Optional, Tuple, Union
 import torch
 
-from .core import TurboQuantProd, PackedKeys, concat_packed_seq, reorder_packed, slice_packed
-from .bitpack import packed_bytes_per_position, fp16_bytes_per_position
+from .polar import recursive_polar_transform, recursive_polar_inverse
+from .triton_polar import is_triton_available, triton_polar_encode, triton_polar_decode
+from .polar_quant import PolarAngleQuantizer
+from .value_quant import ValueQuantizer
+from .bitpack import (
+    pack_2bit, unpack_2bit, pack_1bit, unpack_1bit, pack_4bit, unpack_4bit,
+    compression_ratio, packed_bytes_per_position,
+)
+
+
+def _polar_reconstruct_pytorch(fr: torch.Tensor, pa: List[torch.Tensor], pq: PolarAngleQuantizer) -> torch.Tensor:
+    unpacked = pq.unpack_all(pa); rec_angs = pq.dequantize_all(unpacked)
+    return recursive_polar_inverse(fr, rec_angs)
 
 
 class TurboQuantCache:
     is_compileable = False
     is_initialized = True
-    """
-    Drop-in HuggingFace KV cache with TurboQuant key compression.
-
-    Usage:
-        cache = TurboQuantCache(bits=4)  # 4-bit mode (3b MSE + 1b QJL)
-        output = model.generate(input_ids, past_key_values=cache, ...)
-
-    Parameters
-    ----------
-    bits  : 3.0 (2b MSE + 1b QJL, 4.9x compression) or
-            4.0 (3b MSE + 1b QJL, 3.0x compression, better quality)
-    dtype : working dtype (default float16)
-    seed  : RNG seed for reproducibility
-    """
 
     def __init__(
-        self,
-        bits:  float = 4.0,
-        dtype: torch.dtype = torch.float16,
-        seed:  Optional[int] = 42,
-        num_outlier_pairs: int = 4,
+        self, bits: Union[float, List[float], Dict[int, float]] = 4.0,
+        bits_key: Optional[float] = None, bits_value: Optional[float] = None,
+        outliers: bool = True, num_outlier_pairs: int = 8,
+        dtype: torch.dtype = torch.float16, use_fp8: bool = False, seed: Optional[int] = 42,
+        max_seq_len: int = 16384 * 8, # Default to much larger for Universal mode
     ) -> None:
-        self.bits  = bits
-        self.dtype = dtype
-        self.seed  = seed
-        self.num_outlier_pairs = num_outlier_pairs
-
-        self._quantisers: Dict[int, TurboQuantProd] = {}
-
-        # Phase 1: raw FP16 (prefill)
-        self._raw_keys: Dict[int, torch.Tensor] = {}
-
-        # Phase 2: bit-packed (decode)
-        self._packed_keys: Dict[int, PackedKeys] = {}
-
-        # Values always FP16
-        self._values: Dict[int, torch.Tensor] = {}
-
-        # Outlier tracking [Phase 2 quality retention]
-        self._outlier_indices: Dict[int, torch.Tensor] = {}
-        self._outlier_vals: Dict[int, torch.Tensor] = {}
-
-        self._compressed: Dict[int, bool] = {}
-        self._seen_tokens: int = 0
-
-    # ------------------------------------------------------------------
-    # Internals
-    # ------------------------------------------------------------------
-
-    def _get_q(self, layer_idx: int, head_dim: int, device: str) -> TurboQuantProd:
-        if layer_idx not in self._quantisers:
-            self._quantisers[layer_idx] = TurboQuantProd(
-                bits=self.bits, head_dim=head_dim,
-                device=device, seed=(self.seed or 0) + layer_idx * 1000,
-                dtype=self.dtype,
-            )
-        return self._quantisers[layer_idx]
-
-    def _extract_and_zero_outliers(self, k: torch.Tensor, layer_idx: int) -> torch.Tensor:
-        if self.num_outlier_pairs <= 0:
-            return k
-
-        B, KVH, T, D = k.shape
-        k_pairs = k.view(B, KVH, T, D // 2, 2)
-
-        if layer_idx not in self._outlier_indices:
-            mags = torch.linalg.vector_norm(k_pairs, dim=-1).mean(dim=(0, 2))
-            outliers = torch.topk(mags, self.num_outlier_pairs, dim=1).indices
-            self._outlier_indices[layer_idx] = outliers
-
-        outliers = self._outlier_indices[layer_idx]
-        idx_exp = outliers.view(1, KVH, 1, self.num_outlier_pairs, 1).expand(B, KVH, T, self.num_outlier_pairs, 2)
-        out_vals = torch.gather(k_pairs, 3, idx_exp).view(B, KVH, T, self.num_outlier_pairs * 2)
-
-        if layer_idx not in self._outlier_vals:
-            self._outlier_vals[layer_idx] = out_vals
-        else:
-            self._outlier_vals[layer_idx] = torch.cat([self._outlier_vals[layer_idx], out_vals], dim=2)
-
-        k_quant = k_pairs.clone()
-        k_quant.scatter_(3, idx_exp, 0.0)
-        return k_quant.view(B, KVH, T, D)
-
-    def _inject_outliers(self, full_keys: torch.Tensor, layer_idx: int) -> torch.Tensor:
-        if self.num_outlier_pairs <= 0 or layer_idx not in self._outlier_indices:
-            return full_keys
-
-        B, KVH, T, D = full_keys.shape
-        k_pairs = full_keys.view(B, KVH, T, D // 2, 2)
+        self.bits_config = bits; self.bits_key = bits_key; self.bits_value = bits_value
+        self.outliers = outliers; self.num_outlier_pairs = num_outlier_pairs; self.dtype = dtype
+        self.use_fp8 = use_fp8; self.seed = seed
+        self.max_seq_len = max_seq_len
+        self._value_quantizer = ValueQuantizer(bits=int(self._get_bits_for_layer(0, False)), use_fp8=use_fp8)
         
-        outliers = self._outlier_indices[layer_idx]
-        out_vals = self._outlier_vals[layer_idx]
+        self._sketch_matrices = {}; self._qjl_projections = {}; self._angle_quantizers = {}
+        self._compressed = {}
+        self.compress_start = 0 
+        self._cur_len = {}
+        self._seen_tokens = 0
+        
+        # Static Buffers
+        self._final_radii_buf = {}; self._packed_angles_buf = {}; self._sketched_buffer_buf = {}
+        self._packed_qjl_buf = {}; self._qjl_gammas_buf = {}
+        self._values_buf = {}; self._value_states_buf = {}
+        self._raw_keys = {}; self._raw_values = {}
+        self._outlier_indices = {}; self._outlier_vals_buf = {}
 
-        idx_exp = outliers.view(1, KVH, 1, self.num_outlier_pairs, 1).expand(B, KVH, T, self.num_outlier_pairs, 2)
-        out_vals_view = out_vals.view(B, KVH, T, self.num_outlier_pairs, 2)
-        k_pairs.scatter_(3, idx_exp, out_vals_view)
-        return k_pairs.view(B, KVH, T, D)
+    def _get_bits_for_layer(self, i, is_k=True):
+        if is_k and self.bits_key is not None: return self.bits_key
+        if not is_k and self.bits_value is not None: return self.bits_value
+        if isinstance(self.bits_config, dict): return self.bits_config.get(i, 4.0)
+        return 4.0
 
-    def _compress_layer(self, layer_idx: int) -> None:
-        """Compress prefill raw keys → bit-packed format."""
-        if self._compressed.get(layer_idx):
-            return
-        raw = self._raw_keys.pop(layer_idx, None)
-        if raw is None:
-            return
-        q = self._quantisers[layer_idx]
-        raw_zero = self._extract_and_zero_outliers(raw, layer_idx)
-        self._packed_keys[layer_idx] = q.quantize(raw_zero)
-        self._compressed[layer_idx] = True
+    def _get_resources(self, i, D, device):
+        if i not in self._sketch_matrices:
+            torch.manual_seed((self.seed or 0) + i)
+            mat = torch.randn(D, D, device=device, dtype=torch.float32)
+            q, _ = torch.linalg.qr(mat); self._sketch_matrices[i] = q.to(device).to(self.dtype)
+            proj = torch.randn(D, D, device=device, dtype=self.dtype) / math.sqrt(D)
+            self._qjl_projections[i] = proj.to(device); self._angle_quantizers[i] = PolarAngleQuantizer(d=D)
+        return self._sketch_matrices[i], self._angle_quantizers[i], self._qjl_projections[i]
 
-    # ------------------------------------------------------------------
-    # HuggingFace cache API
-    # ------------------------------------------------------------------
+    def _allocate_buffers(self, i, B, H, D, device):
+        if i in self._final_radii_buf: return
+        pq = self._angle_quantizers[i]; L = int(math.log2(D))
+        self._final_radii_buf[i] = torch.zeros((B, H, self.max_seq_len, 1), device=device, dtype=self.dtype)
+        p_bufs = []
+        for lv in range(L):
+            lvl_d = D >> (lv + 1); bits = 4 if lv <= 3 else 2; ppp = max(1, (lvl_d * bits) // 8)
+            p_bufs.append(torch.zeros((B, H, self.max_seq_len, ppp), device=device, dtype=torch.uint8))
+        self._packed_angles_buf[i] = p_bufs
+        self._sketched_buffer_buf[i] = torch.zeros((B, H, self.max_seq_len, D), device=device, dtype=self.dtype)
+        self._packed_qjl_buf[i] = torch.zeros((B, H, self.max_seq_len, D // 8), device=device, dtype=torch.uint8) # signage handled by bitpack
+        self._qjl_gammas_buf[i] = torch.zeros((B, H, self.max_seq_len, 1), device=device, dtype=self.dtype)
+        
+        # Value Buffers
+        v_bits = self._value_quantizer.bits
+        if v_bits == 4:
+            self._values_buf[i] = torch.zeros((B, H, self.max_seq_len, D // 2), device=device, dtype=torch.uint8)
+            self._value_states_buf[i] = torch.ones((B, H, self.max_seq_len, 2), device=device, dtype=self.dtype)
+        elif v_bits == 8:
+            v_dtype = torch.float8_e4m3fn if (self._value_quantizer.use_fp8 and hasattr(torch, 'float8_e4m3fn')) else torch.int8
+            self._values_buf[i] = torch.zeros((B, H, self.max_seq_len, D), device=device, dtype=v_dtype)
+            self._value_states_buf[i] = torch.ones((B, H, self.max_seq_len, 1), device=device, dtype=self.dtype)
+        else:
+            self._values_buf[i] = torch.zeros((B, H, self.max_seq_len, D), device=device, dtype=self.dtype)
+        self._cur_len[i] = 0
 
-    def update(
-        self,
-        key_states:   torch.Tensor,
-        value_states: torch.Tensor,
-        layer_idx:    int,
-        cache_kwargs: Optional[Dict[str, Any]] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        if layer_idx == 0:
-            self._seen_tokens += key_states.shape[-2]
+    def _compute_qjl(self, k_sk, k_rec_sk, proj):
+        u = torch.matmul(k_sk - k_rec_sk, proj)
+        sign = torch.sign(u).to(torch.int8); sign = torch.where(sign == 0, torch.ones_like(sign), sign)
+        return pack_1bit(sign), torch.abs(u).mean(dim=-1, keepdim=True)
 
-        B, H, T_new, D = key_states.shape
-        q = self._get_q(layer_idx, D, str(key_states.device))
+    def _extract_outliers(self, k, i):
+        if not self.outliers: return k, None, None
+        B, H, T, D = k.shape; k_p = k.view(B, H, T, D // 2, 2)
+        if i not in self._outlier_indices: self._outlier_indices[i] = torch.topk(torch.linalg.vector_norm(k_p, dim=-1).mean(dim=(0, 2)), self.num_outlier_pairs, dim=1).indices
+        id_ex = self._outlier_indices[i].view(1, H, 1, self.num_outlier_pairs, 1).expand(B, H, T, self.num_outlier_pairs, 2)
+        vals = torch.gather(k_p, 3, id_ex).view(B, H, T, -1)
+        if i not in self._outlier_vals_buf: self._outlier_vals_buf[i] = torch.zeros((B, H, self.max_seq_len, self.num_outlier_pairs * 2), device=k.device, dtype=k.dtype)
+        start = self._cur_len.get(i, 0); self._outlier_vals_buf[i][:, :, start:start+T, :] = vals
+        k_q = k_p.clone(); k_q.scatter_(3, id_ex, 0.0)
+        return k_q.view(B, H, T, D), self._outlier_indices[i], self._outlier_vals_buf[i][:, :, :start+T, :]
 
+    def _inject_outliers(self, k, i):
+        if not self.outliers or i not in self._outlier_indices: return k
+        B, H, T, D = k.shape; k_p = k.view(B, H, T, D // 2, 2)
+        id_ex = self._outlier_indices[i].view(1, H, 1, self.num_outlier_pairs, 1).expand(B, H, T, self.num_outlier_pairs, 2)
+        ov = self._outlier_vals_buf[i][:, :, :T, :].view(B, H, T, self.num_outlier_pairs, 2); k_p.scatter_(3, id_ex, ov)
+        return k_p.view(B, H, T, D)
+
+    def _compress_layer(self, i, k_new, v_new):
+        raw = torch.cat([self._raw_keys.get(i, torch.empty((k_new.shape[0], k_new.shape[1], 0, k_new.shape[3]), device=k_new.device, dtype=k_new.dtype)), k_new], dim=2)
+        v_raw = torch.cat([self._raw_values.get(i, torch.empty((v_new.shape[0], v_new.shape[1], 0, v_new.shape[3]), device=v_new.device, dtype=v_new.dtype)), v_new], dim=2)
+        B, H, T, D = raw.shape; sk, pq, proj = self._get_resources(i, D, raw.device); self._allocate_buffers(i, B, H, D, raw.device)
+        k_z, _, _ = self._extract_outliers(raw, i)
+        k_sk = torch.matmul(k_z, sk).contiguous()
+        if is_triton_available() and raw.is_cuda:
+            rf, pa = triton_polar_encode(k_sk, pq.get_all_boundaries(), D); k_rs = triton_polar_decode(rf, pa, pq.get_all_centroids(), D)
+        else:
+            rf, angs = recursive_polar_transform(k_sk); idx = pq.quantize_all(angs); pa = pq.pack_all(idx); k_rs = _polar_reconstruct_pytorch(rf, pa, pq)
+        p_qjl, g = self._compute_qjl(k_sk, k_rs, proj)
+        self._final_radii_buf[i][:, :, :T, :] = rf
+        for lv in range(len(pa)): self._packed_angles_buf[i][lv][:, :, :T, :] = pa[lv]
+        self._sketched_buffer_buf[i][:, :, :T, :] = k_rs; self._packed_qjl_buf[i][:, :, :T, :] = p_qjl; self._qjl_gammas_buf[i][:, :, :T, :] = g
         # Values
-        v = value_states.to(self.dtype)
-        if layer_idx not in self._values:
-            self._values[layer_idx] = v
-        else:
-            self._values[layer_idx] = torch.cat([self._values[layer_idx], v], dim=2)
+        vn, vst = self._value_quantizer.quantize(v_raw)
+        self._values_buf[i][:, :, :T, :] = vn
+        if vst is not None: self._value_states_buf[i][:, :, :T, :] = vst
+        self._cur_len[i] = T; self._compressed[i] = True; self._raw_keys.pop(i, None); self._raw_values.pop(i, None)
 
-        is_prefill = T_new > 1
-
-        if is_prefill:
-            # PREFILL: store raw, return exact
-            k = key_states.to(self.dtype)
-            if layer_idx not in self._raw_keys:
-                self._raw_keys[layer_idx] = k
-            else:
-                self._raw_keys[layer_idx] = torch.cat(
-                    [self._raw_keys[layer_idx], k], dim=2
-                )
-            return self._raw_keys[layer_idx], self._values[layer_idx]
-        else:
-            # DECODE: compress
-            if not self._compressed.get(layer_idx):
-                self._compress_layer(layer_idx)
-
-            k_zero = self._extract_and_zero_outliers(key_states, layer_idx)
-            new_pk = q.quantize(k_zero)
-
-            if layer_idx in self._packed_keys:
-                self._packed_keys[layer_idx] = concat_packed_seq(
-                    self._packed_keys[layer_idx], new_pk
-                )
-            else:
-                self._packed_keys[layer_idx] = new_pk
-
-            # Dequantize MSE-only for standard attention
-            full_keys = q.dequantize_mse(self._packed_keys[layer_idx])
-            full_keys = self._inject_outliers(full_keys, layer_idx)
-            return full_keys, self._values[layer_idx]
-
-    def update_compressed(
-        self,
-        key_states:   torch.Tensor,
-        value_states: torch.Tensor,
-        layer_idx:    int,
-    ) -> torch.Tensor:
-        """
-        Update cache WITHOUT dequantizing keys — for fused scoring mode.
-
-        Returns only values tensor. Keys remain bit-packed in self._packed_keys.
-        This avoids allocating a full FP16 key tensor, giving real VRAM savings.
-        """
-        if layer_idx == 0:
-            self._seen_tokens += key_states.shape[-2]
-
+    def update(self, key_states, value_states, layer_idx, cache_kwargs=None):
         B, H, T_new, D = key_states.shape
-        q = self._get_q(layer_idx, D, str(key_states.device))
+        # LAZY INITIALIZATION: Detect resources and allocate buffers on the fly
+        sk, pq, proj = self._get_resources(layer_idx, D, key_states.device)
+        if layer_idx not in self._final_radii_buf:
+            self._allocate_buffers(layer_idx, B, H, D, key_states.device)
 
-        # Values
-        v = value_states.to(self.dtype)
-        if layer_idx not in self._values:
-            self._values[layer_idx] = v
-        else:
-            self._values[layer_idx] = torch.cat([self._values[layer_idx], v], dim=2)
-
-        is_prefill = T_new > 1
-
-        if is_prefill:
-            # PREFILL: store raw (needed for exact attention during prefill)
-            k = key_states.to(self.dtype)
-            if layer_idx not in self._raw_keys:
-                self._raw_keys[layer_idx] = k
+        if layer_idx == 0: self._seen_tokens += T_new
+        if not self._compressed.get(layer_idx):
+            if self._seen_tokens < self.compress_start:
+                self._raw_keys[layer_idx] = torch.cat([self._raw_keys.get(layer_idx, torch.empty((B, H, 0, D), device=key_states.device, dtype=self.dtype)), key_states], dim=2)
+                self._raw_values[layer_idx] = torch.cat([self._raw_values.get(layer_idx, torch.empty((B, H, 0, value_states.shape[-1]), device=value_states.device, dtype=self.dtype)), value_states], dim=2)
+                return self._raw_keys[layer_idx], self._raw_values[layer_idx]
             else:
-                self._raw_keys[layer_idx] = torch.cat(
-                    [self._raw_keys[layer_idx], k], dim=2
-                )
+                self._compress_layer(layer_idx, key_states, value_states); T = self._cur_len[layer_idx]
+                k_rec = torch.matmul(self._sketched_buffer_buf[layer_idx][:, :, :T, :], sk.T)
+                v_rec = self._value_quantizer.dequantize(self._values_buf[layer_idx][:, :, :T, :], self._value_states_buf.get(layer_idx)[:, :, :T, :] if layer_idx in self._value_states_buf else None, self.dtype)
+                return self._inject_outliers(k_rec, layer_idx), v_rec
+        
+        start = self._cur_len[layer_idx]; T_total = start + T_new
+        if T_total > self.max_seq_len: return key_states, value_states # Overflow fallback
+        k_z, _, _ = self._extract_outliers(key_states, layer_idx); k_sk = torch.matmul(k_z, sk).contiguous()
+        if is_triton_available() and key_states.is_cuda:
+            r_n, p_n = triton_polar_encode(k_sk, pq.get_all_boundaries(), D); k_rs_n = triton_polar_decode(r_n, p_n, pq.get_all_centroids(), D)
         else:
-            # DECODE: compress only, NO dequantize
-            if not self._compressed.get(layer_idx):
-                self._compress_layer(layer_idx)
+            rf_n, ang_n = recursive_polar_transform(k_sk); idx_n = pq.quantize_all(ang_n); p_n = pq.pack_all(idx_n); k_rs_n = _polar_reconstruct_pytorch(rf_n, p_n, pq)
+        p_qjl_n, g_n = self._compute_qjl(k_sk, k_rs_n, proj)
+        self._final_radii_buf[layer_idx][:, :, start:T_total, :] = r_n
+        for lv in range(len(p_n)): self._packed_angles_buf[layer_idx][lv][:, :, start:T_total, :] = p_n[lv]
+        self._sketched_buffer_buf[layer_idx][:, :, start:T_total, :] = k_rs_n; self._packed_qjl_buf[layer_idx][:, :, start:T_total, :] = p_qjl_n; self._qjl_gammas_buf[layer_idx][:, :, start:T_total, :] = g_n
+        vn, vst = self._value_quantizer.quantize(value_states); self._values_buf[layer_idx][:, :, start:T_total, :] = vn
+        if vst is not None: self._value_states_buf[layer_idx][:, :, start:T_total, :] = vst
+        self._cur_len[layer_idx] = T_total
+        k_full = torch.matmul(self._sketched_buffer_buf[layer_idx][:, :, :T_total, :], sk.T)
+        v_full = self._value_quantizer.dequantize(self._values_buf[layer_idx][:, :, :T_total, :], self._value_states_buf.get(layer_idx)[:, :, :T_total, :] if layer_idx in self._value_states_buf else None, self.dtype)
+        return self._inject_outliers(k_full, layer_idx), v_full
 
-            k_zero = self._extract_and_zero_outliers(key_states, layer_idx)
-            new_pk = q.quantize(k_zero)
+    @property
+    def key_cache(self) -> Dict[int, torch.Tensor]:
+        res = {}
+        for i, T in self._cur_len.items():
+            k_rec = torch.matmul(self._sketched_buffer_buf[i][:, :, :T, :], self._sketch_matrices[i].T)
+            res[i] = self._inject_outliers(k_rec, i)
+        for i, k in self._raw_keys.items(): res[i] = k
+        return res
 
-            if layer_idx in self._packed_keys:
-                self._packed_keys[layer_idx] = concat_packed_seq(
-                    self._packed_keys[layer_idx], new_pk
-                )
-            else:
-                self._packed_keys[layer_idx] = new_pk
+    @property
+    def value_cache(self) -> Dict[int, torch.Tensor]:
+        res = {}
+        for i, T in self._cur_len.items():
+            res[i] = self._value_quantizer.dequantize(self._values_buf[i][:, :, :T, :], self._value_states_buf.get(i)[:, :, :T, :] if i in self._value_states_buf else None, self.dtype)
+        for i, v in self._raw_values.items(): res[i] = v
+        return res
 
-        return self._values[layer_idx]
-
-    # ------------------------------------------------------------------
-    # Fused score (bypasses decompression)
-    # ------------------------------------------------------------------
-
-    def fused_scores(
-        self,
-        query_states: torch.Tensor,   # [B, H_q, 1, D]
-        layer_idx:    int,
-    ) -> torch.Tensor:
-        """Attention logits [B, H_q, 1, T] via fused scoring on packed data."""
-        if layer_idx not in self._packed_keys:
-            raise ValueError(f"Layer {layer_idx} not compressed")
-
-        B, H_q, _, D = query_states.shape
-        q = self._quantisers[layer_idx]
-        pk = self._packed_keys[layer_idx]
-        H_kv = pk.packed_idx.shape[1]          # number of KV heads (e.g. 4)
-        gqa_ratio = max(1, H_q // H_kv)        # GQA group size (e.g. 7)
-
-        q_flat = query_states.reshape(B * H_q, D).to(self.dtype)
-
-        scores_list = []
-        for bh in range(B * H_q):
-            b_idx  = bh // H_q
-            h_q    = bh % H_q
-            h_kv   = h_q // gqa_ratio           # map Q head → KV head
-            q_bh   = q_flat[bh : bh + 1]
-            pk_bh  = slice_packed(pk, b=b_idx, h=h_kv)
-            s = q.score_fused(q_bh, pk_bh)
-            scores_list.append(s)
-
-        scores = torch.cat(scores_list, dim=0)
-        T_k = pk.packed_idx.shape[2]
-        scores = scores.reshape(B, H_q, 1, T_k)
-
-        # EXACT outlier dot product
-        if self.num_outlier_pairs > 0 and layer_idx in self._outlier_indices:
-            idx = self._outlier_indices[layer_idx]
-            idx_q = idx.repeat_interleave(gqa_ratio, dim=0)
-            
-            q_pairs = query_states.view(B, H_q, 1, D // 2, 2)
-            idx_q_exp = idx_q.view(1, H_q, 1, self.num_outlier_pairs, 1).expand(B, H_q, 1, self.num_outlier_pairs, 2)
-            q_out = torch.gather(q_pairs, 3, idx_q_exp).view(B, H_q, 1, self.num_outlier_pairs * 2)
-            
-            k_out = self._outlier_vals[layer_idx]
-            k_out_rep = k_out.repeat_interleave(gqa_ratio, dim=1)
-            k_out_t = k_out_rep.transpose(-1, -2)
-            
-            outlier_scores = torch.matmul(q_out, k_out_t)
-            scores = scores + outlier_scores
-
-        return scores
-
-    # ------------------------------------------------------------------
-    # HF compatibility
-    # ------------------------------------------------------------------
-
-    def get_seq_length(self, layer_idx: int = 0) -> int:
-        if layer_idx in self._packed_keys:
-            return self._packed_keys[layer_idx].packed_idx.shape[2]
-        if layer_idx in self._raw_keys:
-            return self._raw_keys[layer_idx].shape[2]
+    def get_seq_length(self, i=0):
+        if i in self._cur_len: return self._cur_len[i]
+        if i in self._raw_keys: return self._raw_keys[i].shape[2]
         return 0
 
-    def get_max_length(self) -> Optional[int]:
-        return None
-
-    def get_max_cache_shape(self, layer_idx: int = 0) -> int:
-        return -1
-
-    def get_usable_length(self, new_seq_length: int, layer_idx: int = 0) -> int:
-        return self.get_seq_length(layer_idx)
-
-    def get_mask_sizes(self, cache_position: torch.Tensor | int, layer_idx: int = 0) -> Tuple[int, int]:
-        if isinstance(cache_position, int):
-            return self.get_seq_length(layer_idx) + cache_position, 0
-        return self.get_seq_length(layer_idx) + cache_position.shape[0], 0
-
-    @property
-    def is_compiled(self) -> bool:
-        return False
-
-    @property
-    def seen_tokens(self) -> int:
-        return self._seen_tokens
-
-    @property
-    def key_cache(self) -> List[torch.Tensor]:
-        out = []
-        for i in sorted(set(list(self._raw_keys) + list(self._packed_keys))):
-            if i in self._raw_keys:
-                out.append(self._raw_keys[i])
-            elif i in self._packed_keys:
-                out.append(self._inject_outliers(self._quantisers[i].dequantize_mse(self._packed_keys[i]), i))
-        return out
-
-    @property
-    def value_cache(self) -> List[torch.Tensor]:
-        return [self._values[i] for i in sorted(self._values)]
-
-    def __len__(self) -> int:
-        return max(len(self._raw_keys), len(self._packed_keys), len(self._values))
-
-    def __iter__(self):
-        for i in sorted(self._values):
-            if i in self._raw_keys:
-                yield self._raw_keys[i], self._values[i]
-            elif i in self._packed_keys:
-                yield self._inject_outliers(self._quantisers[i].dequantize_mse(self._packed_keys[i]), i), self._values[i]
-
-    def reorder_cache(self, beam_idx: torch.Tensor) -> None:
-        for li in list(self._raw_keys):
-            self._raw_keys[li] = self._raw_keys[li].index_select(0, beam_idx)
-        for li in list(self._packed_keys):
-            self._packed_keys[li] = reorder_packed(self._packed_keys[li], beam_idx)
-        for li in list(self._values):
-            self._values[li] = self._values[li].index_select(0, beam_idx)
-        for li in list(self._outlier_vals):
-            self._outlier_vals[li] = self._outlier_vals[li].index_select(0, beam_idx)
-
-    def crop(self, max_length: int) -> None:
-        for li in list(self._raw_keys):
-            if self._raw_keys[li].shape[2] > max_length:
-                self._raw_keys[li] = self._raw_keys[li][:, :, :max_length, :]
-        for li in list(self._packed_keys):
-            pk = self._packed_keys[li]
-            if pk.packed_idx.shape[2] > max_length:
-                self._packed_keys[li] = PackedKeys(
-                    packed_idx=pk.packed_idx[:, :, :max_length, :],
-                    packed_qjl=pk.packed_qjl[:, :, :max_length, :],
-                    residual_norm=pk.residual_norm[:, :, :max_length],
-                    key_norm=pk.key_norm[:, :, :max_length],
-                    head_dim=pk.head_dim, bits_mse=pk.bits_mse, bits_total=pk.bits_total,
-                )
-        for li in list(self._values):
-            if self._values[li].shape[2] > max_length:
-                self._values[li] = self._values[li][:, :, :max_length, :]
-        for li in list(self._outlier_vals):
-            if self._outlier_vals[li].shape[2] > max_length:
-                self._outlier_vals[li] = self._outlier_vals[li][:, :, :max_length, :]
-
-    def batch_repeat_interleave(self, repeats: int) -> None:
-        for li in list(self._raw_keys):
-            self._raw_keys[li] = self._raw_keys[li].repeat_interleave(repeats, dim=0)
-        for li in list(self._packed_keys):
-            pk = self._packed_keys[li]
-            self._packed_keys[li] = PackedKeys(
-                packed_idx=pk.packed_idx.repeat_interleave(repeats, dim=0),
-                packed_qjl=pk.packed_qjl.repeat_interleave(repeats, dim=0),
-                residual_norm=pk.residual_norm.repeat_interleave(repeats, dim=0),
-                key_norm=pk.key_norm.repeat_interleave(repeats, dim=0),
-                head_dim=pk.head_dim, bits_mse=pk.bits_mse, bits_total=pk.bits_total,
-            )
-        for li in list(self._values):
-            self._values[li] = self._values[li].repeat_interleave(repeats, dim=0)
-        for li in list(self._outlier_vals):
-            self._outlier_vals[li] = self._outlier_vals[li].repeat_interleave(repeats, dim=0)
-
-    def batch_select_indices(self, indices: torch.Tensor) -> None:
-        for li in list(self._raw_keys):
-            self._raw_keys[li] = self._raw_keys[li][indices]
-        for li in list(self._packed_keys):
-            self._packed_keys[li] = reorder_packed(self._packed_keys[li], indices)
-        for li in list(self._values):
-            self._values[li] = self._values[li][indices]
-        for li in list(self._outlier_vals):
-            self._outlier_vals[li] = self._outlier_vals[li][indices]
-
-    def reset(self) -> None:
-        self._raw_keys.clear()
-        self._packed_keys.clear()
-        self._values.clear()
-        self._outlier_indices.clear()
-        self._outlier_vals.clear()
-        self._compressed.clear()
-        self._quantisers.clear()
-        self._seen_tokens = 0
-
-    # ------------------------------------------------------------------
-    # Memory diagnostics
-    # ------------------------------------------------------------------
-
-    def memory_footprint(self) -> dict:
-        """Report actual byte-level memory usage."""
-        raw_bytes = sum(t.nelement() * 2 for t in self._raw_keys.values())
-
-        packed_bytes = 0
-        for pk in self._packed_keys.values():
-            packed_bytes += pk.packed_idx.nelement()     # uint8
-            packed_bytes += pk.packed_qjl.nelement()     # uint8
-            packed_bytes += pk.residual_norm.nelement() * 2  # fp16
-            packed_bytes += pk.key_norm.nelement() * 2       # fp16
-
-        value_bytes = sum(t.nelement() * 2 for t in self._values.values())
-
-        # Equivalent FP16 keys
-        total_positions = 0
-        head_dim = 128
-        for pk in self._packed_keys.values():
-            total_positions += pk.key_norm.nelement()
-            head_dim = pk.head_dim
-        for t in self._raw_keys.values():
-            total_positions += t.shape[0] * t.shape[1] * t.shape[2]
-            head_dim = t.shape[3]
-
-        fp16_key_bytes = total_positions * head_dim * 2
-
-        return {
-            "raw_key_bytes": raw_bytes,
-            "packed_key_bytes": packed_bytes,
-            "value_bytes": value_bytes,
-            "fp16_key_equivalent": fp16_key_bytes,
-            "key_compression_ratio": fp16_key_bytes / max(1, packed_bytes + raw_bytes),
-            "total_cache_bytes": raw_bytes + packed_bytes + value_bytes,
-            "fp16_total_equivalent": fp16_key_bytes + value_bytes,
-        }
+    def get_mask_sizes(self, q_len: int, layer_idx: int = 0) -> Tuple[int, int]:
+        """Compatible with HF DynamicCache API."""
+        if isinstance(q_len, torch.Tensor):
+            ql = q_len.shape[0] if q_len.dim() >= 1 else int(q_len.item())
+        else:
+            ql = int(q_len)
+        return self.get_seq_length(layer_idx) + ql, 0

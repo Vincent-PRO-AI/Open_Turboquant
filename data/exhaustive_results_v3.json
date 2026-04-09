@@ -1,0 +1,80 @@
+[
+  {
+    "mode": "baseline",
+    "ctx": 10000,
+    "vram_gb": 48.93099308013916,
+    "sample": "Write a detailed explanation of quantum entanglement in 50 words. 50 words. 50 words. 50 words. 50 words. 50 words. 50 words. 5"
+  },
+  {
+    "mode": "baseline",
+    "ctx": 50000,
+    "vram_gb": 63.894922733306885,
+    "sample": "Write a detailed explanation of quantum entanglement in 50 words. 50 words. 50 words. 50 words. 50 words. 50 words. 50 words. 5"
+  },
+  {
+    "mode": "baseline",
+    "ctx": 100000,
+    "vram_gb": 82.52382898330688,
+    "sample": "Write a detailed explanation of quantum entanglement in 50 words. 50 words. 50 words. 50 words. 50 words. 50 words. 50 words. 5"
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 10000,
+    "vram_gb": 46.666407108306885,
+    "sample": "Write a detailed explanation of quantum entanglement in 50 words. 50 words. 50 words. 50 words. 50 words. 50 words. 50 words. 5"
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 50000,
+    "vram_gb": 46.666407108306885,
+    "sample": "Write a detailed explanation of quantum entanglement in 50 words. 50 words. 50 words. 50 words. 50 words. 50 words. 50 words. 5"
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 100000,
+    "vram_gb": 46.666407108306885,
+    "sample": "Write a detailed explanation of quantum entanglement in 50 words. 50 words. 50 words. 50 words. 50 words. 50 words. 50 words. 5"
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 200000,
+    "vram_gb": 46.666407108306885,
+    "sample": "Write a detailed explanation of quantum entanglement in 50 words. 50 words. 50 words. 50 words. 50 words. 50 words. 50 words. 5"
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 300000,
+    "vram_gb": 46.666407108306885,
+    "sample": "Write a detailed explanation of quantum entanglement in 50 words. 50 words. 50 words. 50 words. 50 words. 50 words. 50 words. 5"
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 500000,
+    "vram_gb": 46.666407108306885,
+    "sample": "Write a detailed explanation of quantum entanglement in 50 words. 50 words. 50 words. 50 words. 50 words. 50 words. 50 words. 5"
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 750000,
+    "vram_gb": 46.666407108306885,
+    "sample": "Write a detailed explanation of quantum entanglement in 50 words. 50 words. 50 words. 50 words. 50 words. 50 words. 50 words. 5"
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1000000,
+    "vram_gb": 46.666407108306885,
+    "sample": "Write a detailed explanation of quantum entanglement in 50 words. 50 words. 50 words. 50 words. 50 words. 50 words. 50 words. 5"
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1250000,
+    "vram_gb": 46.666407108306885,
+    "sample": "Write a detailed explanation of quantum entanglement in 50 words. 50 words. 50 words. 50 words. 50 words. 50 words. 50 words. 5"
+  },
+  {
+    "mode": "turboquant",
+    "ctx": 1500000,
+    "vram_gb": 46.666407108306885,
+    "sample": "Write a detailed explanation of quantum entanglement in 50 words. 50 words. 50 words. 50 words. 50 words. 50 words. 50 words. 5"
+  }
+]

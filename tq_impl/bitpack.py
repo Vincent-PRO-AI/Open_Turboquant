@@ -46,9 +46,6 @@ def pack_2bit(indices: torch.Tensor) -> torch.Tensor:
 def unpack_2bit(packed: torch.Tensor, D: int) -> torch.Tensor:
     """
     Unpack uint8 → 2-bit indices.
-
-    Input:  [..., D//4] uint8
-    Output: [..., D] int16
     """
     *lead, packed_D = packed.shape
     x0 =  packed       & 0x03
@@ -56,6 +53,31 @@ def unpack_2bit(packed: torch.Tensor, D: int) -> torch.Tensor:
     x2 = (packed >> 4) & 0x03
     x3 = (packed >> 6) & 0x03
     return torch.stack([x0, x1, x2, x3], dim=-1).reshape(*lead, D).to(torch.int16)
+
+
+# =====================================================================
+# 4-bit packing (for MSE or Polar Level 0)
+# =====================================================================
+
+def pack_4bit(indices: torch.Tensor) -> torch.Tensor:
+    """
+    Pack 4-bit indices (values 0–15) into uint8, 2 per byte.
+    """
+    *lead, D = indices.shape
+    assert D % 2 == 0, f"head_dim must be even, got {D}"
+    x = indices.reshape(*lead, D // 2, 2).to(torch.uint8)
+    packed = x[..., 0] | (x[..., 1] << 4)
+    return packed
+
+
+def unpack_4bit(packed: torch.Tensor, D: int) -> torch.Tensor:
+    """
+    Unpack uint8 → 4-bit indices.
+    """
+    *lead, packed_D = packed.shape
+    x0 =  packed       & 0x0F
+    x1 = (packed >> 4) & 0x0F
+    return torch.stack([x0, x1], dim=-1).reshape(*lead, D).to(torch.int16)
 
 
 # =====================================================================
@@ -140,29 +162,28 @@ def packed_bytes_per_position(bits_mse: int, head_dim: int) -> int:
     Return actual bytes per (head, position) for packed TurboQuant keys.
 
     Components:
-      - Packed MSE indices: D//pack_factor bytes
-      - Packed QJL signs:   D//8 bytes
-      - key_norm:           2 bytes (fp16)
-      - residual_norm:      2 bytes (fp16)
+      - Packed MSE indices: D // pack_factor bytes
+      - Packed QJL signs:   D // 8 bytes
+      - Residual norm:      2 bytes (fp16)
+      - Key norm:           2 bytes (fp16)
     """
+    D = head_dim
     if bits_mse == 2:
-        idx_bytes = head_dim // 4
+        idx_bytes = D // 4      # 4 values per byte
     elif bits_mse == 3:
-        idx_bytes = head_dim // 2
+        idx_bytes = D // 2      # 2 values per byte (6-bit used)
     else:
-        idx_bytes = head_dim   # fallback: 1 byte per coord
-
-    qjl_bytes  = head_dim // 8
-    norm_bytes = 4   # 2 x fp16
-
-    return idx_bytes + qjl_bytes + norm_bytes
-
-
-def fp16_bytes_per_position(head_dim: int) -> int:
-    """Bytes per (head, position) for FP16 keys."""
-    return head_dim * 2
+        idx_bytes = D           # 1 value per byte (fallback)
+    qjl_bytes = D // 8          # 8 signs per byte
+    return idx_bytes + qjl_bytes + 2 + 2   # +2 each for res_norm, key_norm
 
 
 def compression_ratio(bits_mse: int, head_dim: int) -> float:
-    """Theoretical compression ratio for keys only."""
-    return fp16_bytes_per_position(head_dim) / packed_bytes_per_position(bits_mse, head_dim)
+    """
+    Return compression ratio for keys vs FP16 baseline.
+
+    FP16 baseline: head_dim * 2 bytes per position.
+    """
+    fp16_bytes = head_dim * 2
+    tq_bytes = packed_bytes_per_position(bits_mse, head_dim)
+    return fp16_bytes / tq_bytes

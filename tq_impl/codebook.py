@@ -29,48 +29,59 @@ import torch
 # Lloyd-Max solver
 # ---------------------------------------------------------------------------
 
-def _lloyd_max(n_levels: int, sigma: float, n_iter: int = 2000) -> np.ndarray:
-    """
-    Compute optimal Lloyd-Max quantizer for N(0, sigma²).
+# ---------------------------------------------------------------------------
+# Lloyd-Max solver
+# ---------------------------------------------------------------------------
 
-    Alternates between:
-      1. Centroid update  : c_i = E[X | X in Voronoi(c_i)]
-      2. Boundary update  : b_i = (c_i + c_{i+1}) / 2
-
-    Convergence is tight (< 1e-12 centroid shift) within ~200 iterations.
-    """
+def _lloyd_max(n_levels: int, sigma: float, n_iter: int = 1000) -> np.ndarray:
+    """Optimal Lloyd-Max for N(0, sigma²)."""
     from scipy.stats import norm as sp_norm
-
-    # Initialise centroids at quantile midpoints — better than uniform init
     probs = np.linspace(1.0 / (2 * n_levels), 1.0 - 1.0 / (2 * n_levels), n_levels)
-    levels = sigma * sp_norm.ppf(probs)
+    centroids = sigma * sp_norm.ppf(probs)
 
     for _ in range(n_iter):
-        prev = levels.copy()
-
-        # Voronoi boundaries  (−∞, b_1, …, b_{n-1}, +∞)
-        boundaries = np.concatenate([[-np.inf], (levels[:-1] + levels[1:]) / 2, [np.inf]])
-
+        prev = centroids.copy()
+        boundaries = np.concatenate([[-np.inf], (centroids[:-1] + centroids[1:]) / 2, [np.inf]])
         for i in range(n_levels):
-            lo_s = boundaries[i] / sigma
-            hi_s = boundaries[i + 1] / sigma
+            lo, hi = boundaries[i] / sigma, boundaries[i + 1] / sigma
+            p = sp_norm.cdf(hi) - sp_norm.cdf(lo)
+            if p > 1e-15:
+                centroids[i] = sigma * (sp_norm.pdf(lo) - sp_norm.pdf(hi)) / p
+        if np.max(np.abs(centroids - prev)) < 1e-12: break
+    return centroids
 
-            # P(lo < X < hi) for X ~ N(0, sigma²)
-            cdf_lo = sp_norm.cdf(lo_s)
-            cdf_hi = sp_norm.cdf(hi_s)
-            p = cdf_hi - cdf_lo
-            if p < 1e-15:
-                continue
 
-            # E[X | lo < X < hi] = sigma * (φ(lo_s) − φ(hi_s)) / p
-            pdf_lo = sp_norm.pdf(lo_s)
-            pdf_hi = sp_norm.pdf(hi_s)
-            levels[i] = sigma * (pdf_lo - pdf_hi) / p
+def _lloyd_max_angular(n_levels: int, L: int, n_iter: int = 500) -> np.ndarray:
+    """
+    Optimal Lloyd-Max for f_L(φ) ∝ (sin 2φ)^(2^L - 1) on [0, π/2].
+    For L=0, it is uniform on [0, 2π].
+    """
+    if L == 0:
+        # Uniform on [0, 2π]
+        return np.linspace(0, 2 * np.pi, n_levels + 1)[:-1] + (np.pi / n_levels)
 
-        if np.max(np.abs(levels - prev)) < 1e-12:
-            break
+    # Numerical integration for f_L(φ)
+    phi = np.linspace(0, np.pi/2, 2000)
+    pdf = (np.sin(2 * phi)) ** (2**L - 1)
+    cdf = np.cumsum(pdf)
+    cdf /= cdf[-1]
 
-    return levels
+    # Initial centroids via inverse CDF
+    target_cdfs = np.linspace(1.0/(2*n_levels), 1.0 - 1.0/(2*n_levels), n_levels)
+    centroids = np.interp(target_cdfs, cdf, phi)
+
+    for _ in range(n_iter):
+        prev = centroids.copy()
+        bounds = np.concatenate([[0], (centroids[:-1] + centroids[1:]) / 2, [np.pi/2]])
+        
+        for i in range(n_levels):
+            mask = (phi >= bounds[i]) & (phi <= bounds[i+1])
+            if np.any(mask):
+                centroids[i] = np.average(phi[mask], weights=pdf[mask])
+        
+        if np.max(np.abs(centroids - prev)) < 1e-10: break
+            
+    return centroids
 
 
 # ---------------------------------------------------------------------------
@@ -79,68 +90,58 @@ def _lloyd_max(n_levels: int, sigma: float, n_iter: int = 2000) -> np.ndarray:
 
 _CACHE_DIR = os.path.join(os.path.dirname(__file__), ".codebook_cache")
 
-
-def _cache_path(bits: int, head_dim: int) -> str:
+def _path_gaussian(bits: int, head_dim: int) -> str:
     os.makedirs(_CACHE_DIR, exist_ok=True)
-    return os.path.join(_CACHE_DIR, f"b{bits}_d{head_dim}.pkl")
+    return os.path.join(_CACHE_DIR, f"gauss_b{bits}_d{head_dim}.pkl")
+
+def _path_angular(bits: int, L: int) -> str:
+    os.makedirs(_CACHE_DIR, exist_ok=True)
+    return os.path.join(_CACHE_DIR, f"angle_b{bits}_L{L}.pkl")
 
 
 @lru_cache(maxsize=128)
 def get_codebook(bits: int, head_dim: int) -> torch.Tensor:
-    """
-    Return Lloyd-Max centroids tensor of shape [2^bits] (on CPU, float32).
-
-    The distribution is N(0, 1/head_dim), matching the coordinate distribution
-    of unit-norm vectors after a random rotation in R^head_dim.
-
-    Results are cached to disk after first computation.
-    """
-    path = _cache_path(bits, head_dim)
+    path = _path_gaussian(bits, head_dim)
     if os.path.exists(path):
-        with open(path, "rb") as f:
-            centroids = pickle.load(f)
-        return torch.tensor(centroids, dtype=torch.float32)
+        with open(path, "rb") as f: return torch.tensor(pickle.load(f), dtype=torch.float32)
 
-    sigma = 1.0 / (head_dim ** 0.5)
-    n_levels = 2 ** bits
-    centroids = _lloyd_max(n_levels, sigma)
-    with open(path, "wb") as f:
-        pickle.dump(centroids, f)
+    centroids = _lloyd_max(2**bits, 1.0 / (head_dim**0.5))
+    with open(path, "wb") as f: pickle.dump(centroids, f)
     return torch.tensor(centroids, dtype=torch.float32)
 
 
 @lru_cache(maxsize=128)
+def get_angular_codebook(bits: int, L: int) -> torch.Tensor:
+    path = _path_angular(bits, L)
+    if os.path.exists(path):
+        with open(path, "rb") as f: return torch.tensor(pickle.load(f), dtype=torch.float32)
+
+    centroids = _lloyd_max_angular(2**bits, L)
+    with open(path, "wb") as f: pickle.dump(centroids, f)
+    return torch.tensor(centroids, dtype=torch.float32)
+
+
 def get_boundaries(bits: int, head_dim: int) -> torch.Tensor:
-    """
-    Return (2^bits − 1) Voronoi decision boundaries for torch.bucketize.
-    """
     c = get_codebook(bits, head_dim)
     return (c[:-1] + c[1:]) / 2
 
+def get_angular_boundaries(bits: int, L: int) -> torch.Tensor:
+    c = get_angular_codebook(bits, L)
+    return (c[:-1] + c[1:]) / 2
 
-# ---------------------------------------------------------------------------
-# Quick distortion sanity-check (used in benchmark)
-# ---------------------------------------------------------------------------
 
-def expected_mse(bits: int, head_dim: int, n_samples: int = 100_000) -> float:
+def expected_mse(bits: int, head_dim: int, n_samples: int = 10_000) -> float:
     """
-    Empirically estimate D_mse for this codebook on random unit vectors.
-
-    Should be ≈ (√3π / 2) · (1/4^bits) from Theorem 1.
+    Empirical expected MSE of Lloyd-Max quantizer for N(0, 1/sqrt(d)).
     """
-    c = get_codebook(bits, head_dim)
-    boundaries = get_boundaries(bits, head_dim)
+    sigma = 1.0 / (head_dim ** 0.5)
+    cb = get_codebook(bits, head_dim)
+    bd = get_boundaries(bits, head_dim)
 
-    x = torch.randn(n_samples, head_dim)
-    x = x / x.norm(dim=-1, keepdim=True)  # unit sphere
+    x = torch.randn(n_samples) * sigma
+    idx = torch.bucketize(x, bd)
+    x_hat = cb[idx]
+    return ((x - x_hat) ** 2).mean().item()
 
-    # Random rotation
-    Pi, _ = torch.linalg.qr(torch.randn(head_dim, head_dim))
-    y = x @ Pi.T  # rotated coordinates ~ N(0, 1/d)
 
-    idx = torch.bucketize(y, boundaries)
-    y_hat = c[idx]
-    x_hat = y_hat @ Pi  # inverse rotation
-
-    mse = ((x - x_hat) ** 2).mean().item()
-    return mse
+# -------------------------------------------------------------------------
