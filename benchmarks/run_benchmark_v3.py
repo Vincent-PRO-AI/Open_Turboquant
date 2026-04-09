@@ -10,7 +10,9 @@ import gc, sys, time, math, os
 import torch
 import torch.nn.functional as F
 
-sys.path.insert(0, os.path.dirname(__file__))
+root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if root not in sys.path:
+    sys.path.insert(0, root)
 
 # ---------------------------------------------------------------------------
 # Config

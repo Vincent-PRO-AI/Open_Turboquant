@@ -1,5 +1,12 @@
 
+import os
+import sys
 import torch
+
+# Fix pour permettre l'import de tq_impl depuis n'importe quel sous-dossier
+root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if root not in sys.path:
+    sys.path.insert(0, root)
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from tq_impl import AutoTurboQuant, TurboQuantCache
 

@@ -166,7 +166,7 @@ class TurboQuantCache:
         if is_triton_available() and key_states.is_cuda:
             r_n, p_n = triton_polar_encode(k_sk, pq.get_all_boundaries(), D); k_rs_n = triton_polar_decode(r_n, p_n, pq.get_all_centroids(), D)
         else:
-            rf_n, ang_n = recursive_polar_transform(k_sk); idx_n = pq.quantize_all(ang_n); p_n = pq.pack_all(idx_n); k_rs_n = _polar_reconstruct_pytorch(rf_n, p_n, pq)
+            r_n, ang_n = recursive_polar_transform(k_sk); idx_n = pq.quantize_all(ang_n); p_n = pq.pack_all(idx_n); k_rs_n = _polar_reconstruct_pytorch(r_n, p_n, pq)
         p_qjl_n, g_n = self._compute_qjl(k_sk, k_rs_n, proj)
         self._final_radii_buf[layer_idx][:, :, start:T_total, :] = r_n
         for lv in range(len(p_n)): self._packed_angles_buf[layer_idx][lv][:, :, start:T_total, :] = p_n[lv]

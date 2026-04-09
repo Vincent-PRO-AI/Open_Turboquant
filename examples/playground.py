@@ -13,12 +13,17 @@ import argparse
 import time
 import torch
 import gc
+import os
+import sys
+
+# Fix pour permettre l'import de tq_impl depuis n'importe quel sous-dossier
+root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if root not in sys.path:
+    sys.path.insert(0, root)
 
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
-from tq_impl.cache import TurboQuantCache
-from tq_impl.model_patch import patch_model_for_turboquant, unpatch_model_for_turboquant
-from tq_impl.bitpack import compression_ratio
+from tq_impl import TurboQuantCache, AutoTurboQuant, compression_ratio
 
 
 def get_gpu_mem_mb():

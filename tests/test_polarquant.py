@@ -1,4 +1,12 @@
+import os
+import sys
 import torch
+
+# Fix pour permettre l'import de tq_impl depuis le dossier tests/
+root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if root not in sys.path:
+    sys.path.insert(0, root)
+
 from tq_impl import TurboQuantCache
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import time
@@ -18,9 +26,9 @@ def test_polar_fidelity():
     k_out, v_out = cache.update(k, v, 0)
     print(f"Prefill diff: {(k - k_out).abs().max().item():.2e}")
     
-    # 2. Force Compression
-    cache._compress_layer(0)
-    print("Layer 0 compressed to Polar format.")
+    # 2. Status Check (Compression is automatic in v1.0)
+    if cache._compressed.get(0):
+        print("[OK] Layer 0 automatically compressed to Polar format.")
     
     # 3. Decode Step
     k_new = torch.randn(B, H, 1, head_dim, device=device, dtype=torch.float16)
@@ -36,9 +44,9 @@ def test_polar_fidelity():
     print(f"Mean Cosine Similarity: {cos_sim.item():.6f}")
     
     if cos_sim > 0.99:
-        print("✅ Fidelity check passed!")
+        print("[SUCCESS] Fidelity check passed!")
     else:
-        print("❌ Fidelity check failed!")
+        print("[FAILURE] Fidelity check failed!")
 
 if __name__ == "__main__":
     test_polar_fidelity()
