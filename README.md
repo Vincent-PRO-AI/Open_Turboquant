@@ -1,6 +1,6 @@
 # 🚀 Open TurboQuant: Universal KV Cache Compression Engine
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![CUDA](https://img.shields.io/badge/CUDA-12.1+-green.svg)](https://developer.nvidia.com/cuda-toolkit)
 [![Blackwell Verified](https://img.shields.io/badge/Blackwell-Verified-blue.svg)](https://www.nvidia.com/en-us/data-center/nvidias-rtx-6000-ada/)
 
@@ -86,4 +86,4 @@ python examples/local_universal_validation.py
 
 ## ⚖️ License
 
-MIT License. Free for research and commercial use.
+Apache License 2.0. Free for research, modification, and commercial use.
