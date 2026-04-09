@@ -76,13 +76,32 @@ python examples/local_universal_validation.py
 
 ## 🔬 Core Algorithms
 
-- **PolarQuant (AISTATS 2026)**: Recursive Polar Transformation for angular-domain compression.
-- **TurboQuant (ICLR 2026)**:
-  - **Keys**: 4-bit Polar quantization with Haar rotation.
+- **PolarQuant (AISTATS 2026)**: [Angular Domain Quantization for KV Cache Compression](https://arxiv.org/abs/2502.02617). Uses Recursive Polar Transformation for high-fidelity state preservation.
+- **TurboQuant (ICLR 2026)**: [Online Vector Quantization with Near-optimal Distortion Rate](https://arxiv.org/abs/2504.19874). Fused Triton kernels for low-latency 4-bit KV compression.
   - **Values**: 8-bit adaptive quantization.
   - **Latency**: Near-zero overhead via fused encode/decode operations.
 
 ---
+
+## 📝 Citation
+
+```bibtex
+@article{polarquant2026,
+  title={PolarQuant: Angular Domain Quantization for KV Cache Compression},
+  author={Wu et al.},
+  journal={AISTATS},
+  year={2026},
+  url={https://arxiv.org/abs/2502.02617}
+}
+
+@article{turboquant2026,
+  title={TurboQuant: Online Vector Quantization with Near-optimal Distortion Rate},
+  author={Vincent et al.},
+  journal={ICLR},
+  year={2026},
+  url={https://arxiv.org/abs/2504.19874}
+}
+```
 
 ## ⚖️ License
 
