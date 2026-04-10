@@ -35,7 +35,7 @@ class TurboQuantCache:
         self, bits: Union[float, List[float], Dict[int, float]] = 4.0,
         bits_key: Optional[float] = None, bits_value: Optional[float] = None,
         outliers: bool = True, num_outlier_pairs: int = 8,
-        dtype: torch.dtype = torch.float16, use_fp8: bool = False, seed: Optional[int] = 42,
+        dtype: Optional[torch.dtype] = None, use_fp8: bool = False, seed: Optional[int] = 42,
         max_seq_len: int = 16384 * 8, # Default to much larger for Universal mode
     ) -> None:
         self.bits_config = bits; self.bits_key = bits_key; self.bits_value = bits_value
@@ -143,6 +143,7 @@ class TurboQuantCache:
 
     def update(self, key_states, value_states, layer_idx, cache_kwargs=None):
         B, H, T_new, D = key_states.shape
+        if self.dtype is None: self.dtype = key_states.dtype
         # LAZY INITIALIZATION: Detect resources and allocate buffers on the fly
         sk, pq, proj = self._get_resources(layer_idx, D, key_states.device)
         if layer_idx not in self._final_radii_buf:
