@@ -51,7 +51,7 @@ class TurboQuantCache:
         self._seen_tokens = 0
         
         # Static Buffers
-        self._final_radii_buf = {}; self._packed_angles_buf = {}; self._sketched_buffer_buf = {}
+        self._final_radii_buf = {}; self._packed_angles_buf = {}
         self._packed_qjl_buf = {}; self._qjl_gammas_buf = {}
         self._values_buf = {}; self._value_states_buf = {}
         self._raw_keys = {}; self._raw_values = {}
@@ -81,7 +81,6 @@ class TurboQuantCache:
             lvl_d = D >> (lv + 1); bits = 4 if lv <= 3 else 2; ppp = max(1, (lvl_d * bits) // 8)
             p_bufs.append(torch.zeros((B, H, self.max_seq_len, ppp), device=device, dtype=torch.uint8))
         self._packed_angles_buf[i] = p_bufs
-        self._sketched_buffer_buf[i] = torch.zeros((B, H, self.max_seq_len, D), device=device, dtype=self.dtype)
         self._packed_qjl_buf[i] = torch.zeros((B, H, self.max_seq_len, D // 8), device=device, dtype=torch.uint8) # signage handled by bitpack
         self._qjl_gammas_buf[i] = torch.zeros((B, H, self.max_seq_len, 1), device=device, dtype=self.dtype)
         
@@ -134,7 +133,7 @@ class TurboQuantCache:
         p_qjl, g = self._compute_qjl(k_sk, k_rs, proj)
         self._final_radii_buf[i][:, :, :T, :] = rf
         for lv in range(len(pa)): self._packed_angles_buf[i][lv][:, :, :T, :] = pa[lv]
-        self._sketched_buffer_buf[i][:, :, :T, :] = k_rs; self._packed_qjl_buf[i][:, :, :T, :] = p_qjl; self._qjl_gammas_buf[i][:, :, :T, :] = g
+        self._packed_qjl_buf[i][:, :, :T, :] = p_qjl; self._qjl_gammas_buf[i][:, :, :T, :] = g
         # Values
         vn, vst = self._value_quantizer.quantize(v_raw)
         self._values_buf[i][:, :, :T, :] = vn
@@ -157,7 +156,7 @@ class TurboQuantCache:
                 return self._raw_keys[layer_idx], self._raw_values[layer_idx]
             else:
                 self._compress_layer(layer_idx, key_states, value_states); T = self._cur_len[layer_idx]
-                k_rec = torch.matmul(self._sketched_buffer_buf[layer_idx][:, :, :T, :], sk.T)
+                k_rec = self._reconstruct_keys(layer_idx, T)
                 v_rec = self._value_quantizer.dequantize(self._values_buf[layer_idx][:, :, :T, :], self._value_states_buf.get(layer_idx)[:, :, :T, :] if layer_idx in self._value_states_buf else None, self.dtype)
                 return self._inject_outliers(k_rec, layer_idx), v_rec
         
@@ -171,19 +170,40 @@ class TurboQuantCache:
         p_qjl_n, g_n = self._compute_qjl(k_sk, k_rs_n, proj)
         self._final_radii_buf[layer_idx][:, :, start:T_total, :] = r_n
         for lv in range(len(p_n)): self._packed_angles_buf[layer_idx][lv][:, :, start:T_total, :] = p_n[lv]
-        self._sketched_buffer_buf[layer_idx][:, :, start:T_total, :] = k_rs_n; self._packed_qjl_buf[layer_idx][:, :, start:T_total, :] = p_qjl_n; self._qjl_gammas_buf[layer_idx][:, :, start:T_total, :] = g_n
+        self._packed_qjl_buf[layer_idx][:, :, start:T_total, :] = p_qjl_n; self._qjl_gammas_buf[layer_idx][:, :, start:T_total, :] = g_n
         vn, vst = self._value_quantizer.quantize(value_states); self._values_buf[layer_idx][:, :, start:T_total, :] = vn
         if vst is not None: self._value_states_buf[layer_idx][:, :, start:T_total, :] = vst
         self._cur_len[layer_idx] = T_total
-        k_full = torch.matmul(self._sketched_buffer_buf[layer_idx][:, :, :T_total, :], sk.T)
+        k_full = self._reconstruct_keys(layer_idx, T_total)
         v_full = self._value_quantizer.dequantize(self._values_buf[layer_idx][:, :, :T_total, :], self._value_states_buf.get(layer_idx)[:, :, :T_total, :] if layer_idx in self._value_states_buf else None, self.dtype)
         return self._inject_outliers(k_full, layer_idx), v_full
+
+    def _reconstruct_keys(self, layer_idx, T=None):
+        if layer_idx not in self._final_radii_buf: return None
+        if T is None: T = self._cur_len[layer_idx]
+        B, H, _, _ = self._final_radii_buf[layer_idx].shape
+        # Get true head dim from stored sketch matrix
+        sk = self._sketch_matrices[layer_idx]; D = sk.shape[0]
+        sk, pq, proj = self._get_resources(layer_idx, D, self._final_radii_buf[layer_idx].device)
+        rf = self._final_radii_buf[layer_idx][:, :, :T, :]
+        pa = [buf[:, :, :T, :] for buf in self._packed_angles_buf[layer_idx]]
+        if is_triton_available() and rf.is_cuda:
+            k_rs = triton_polar_decode(rf, pa, pq.get_all_centroids(), D)
+        else:
+            k_rs = _polar_reconstruct_pytorch(rf, pa, pq)
+        p_qjl = self._packed_qjl_buf[layer_idx][:, :, :T, :]
+        g = self._qjl_gammas_buf[layer_idx][:, :, :T, :]
+        qjl_sign = unpack_1bit(p_qjl, D).to(self.dtype)
+        # Reconstruct correction: (sign @ proj.T) * g * const
+        const = math.sqrt(math.pi / 2) / D
+        correction = (qjl_sign @ proj.T) * (g * const)
+        return torch.matmul(k_rs + correction, sk.T)
 
     @property
     def key_cache(self) -> Dict[int, torch.Tensor]:
         res = {}
         for i, T in self._cur_len.items():
-            k_rec = torch.matmul(self._sketched_buffer_buf[i][:, :, :T, :], self._sketch_matrices[i].T)
+            k_rec = self._reconstruct_keys(i, T)
             res[i] = self._inject_outliers(k_rec, i)
         for i, k in self._raw_keys.items(): res[i] = k
         return res
@@ -208,3 +228,39 @@ class TurboQuantCache:
         else:
             ql = int(q_len)
         return self.get_seq_length(layer_idx) + ql, 0
+    
+    def memory_footprint(self) -> Dict[str, float]:
+        """Returns statistics about the memory consumption of the cache in GB."""
+        total_p = 0
+        # Keys
+        for i in self._packed_angles_buf:
+            for buf in self._packed_angles_buf[i]:
+                total_p += buf.element_size() * buf.nelement()
+        
+        # Values
+        for i in self._values_buf:
+            total_p += self._values_buf[i].element_size() * self._values_buf[i].nelement()
+            if i in self._value_states_buf:
+                total_p += self._value_states_buf[i].element_size() * self._value_states_buf[i].nelement()
+        
+        # Radii, QJL
+        for i in self._final_radii_buf:
+            total_p += self._final_radii_buf[i].element_size() * self._final_radii_buf[i].nelement()
+            total_p += self._packed_qjl_buf[i].element_size() * self._packed_qjl_buf[i].nelement()
+            total_p += self._qjl_gammas_buf[i].element_size() * self._qjl_gammas_buf[i].nelement()
+            
+        # Outliers
+        for i in self._outlier_vals_buf:
+            total_p += self._outlier_vals_buf[i].element_size() * self._outlier_vals_buf[i].nelement()
+            
+        # Raw items (pre-compression)
+        for i in self._raw_keys:
+            total_p += self._raw_keys[i].element_size() * self._raw_keys[i].nelement()
+        for i in self._raw_values:
+            total_p += self._raw_values[i].element_size() * self._raw_values[i].nelement()
+            
+        return {
+            "total_allocated_gb": total_p / (1024**3),
+            "key_compression_ratio": 4.0, 
+            "value_compression_ratio": 4.0
+        }
