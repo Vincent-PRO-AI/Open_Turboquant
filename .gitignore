@@ -28,3 +28,6 @@ Thumbs.db
 tq_impl.egg-info/
 dist/
 build/
+.venv_wsl/
+scratch/
+benchmarks/audit_v2_results.txt
