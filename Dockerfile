@@ -14,6 +14,6 @@ COPY . /app/
 RUN pip install --no-cache-dir -e .
 RUN pip install --no-cache-dir accelerate bitsandbytes scipy matplotlib
 
-# Set the default command to run the POC validation script
-# This proves the installation works immediately upon `docker run`
-CMD ["python", "examples/local_universal_validation.py"]
+# Set the default command to run the interactive POC Chat
+# Requires HF_TOKEN to be passed for gated models like Gemma
+CMD ["python", "examples/poc_chat.py"]

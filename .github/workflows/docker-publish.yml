@@ -8,8 +8,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  # github.repository returns the lowercase repo name on GitHub
-  IMAGE_NAME: ${{ github.repository }}
+  # Hardcoded lowercase repository name to prevent Docker push errors
+  IMAGE_NAME: vincent-pro-ai/open_turboquant
 
 jobs:
   build-and-push-image:
