@@ -1,5 +1,5 @@
-# Base image with PyTorch and CUDA runtime pre-installed
-FROM pytorch/pytorch:2.2.0-cuda12.1-cudnn8-devel
+# Lighter runtime image for POC to avoid disk space issues on GH Actions
+FROM pytorch/pytorch:2.2.0-cuda12.1-cudnn8-runtime
 
 # Set the working directory
 WORKDIR /app
