@@ -36,7 +36,7 @@ class TurboQuantCache:
         bits_key: Optional[float] = None, bits_value: Optional[float] = None,
         outliers: bool = True, num_outlier_pairs: int = 8,
         dtype: Optional[torch.dtype] = None, use_fp8: bool = False, seed: Optional[int] = 42,
-        max_seq_len: int = 16384 * 8, # Default to much larger for Universal mode
+        max_seq_len: int = 16384, # Optimized for single-GPU 4090 (24GB)
     ) -> None:
         self.bits_config = bits; self.bits_key = bits_key; self.bits_value = bits_value
         self.outliers = outliers; self.num_outlier_pairs = num_outlier_pairs; self.dtype = dtype
