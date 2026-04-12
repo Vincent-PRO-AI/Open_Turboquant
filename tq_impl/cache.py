@@ -36,18 +36,21 @@ class TurboQuantCache:
         bits_key: Optional[float] = None, bits_value: Optional[float] = None,
         outliers: bool = True, num_outlier_pairs: int = 8,
         dtype: Optional[torch.dtype] = None, use_fp8: bool = False, seed: Optional[int] = 42,
-        max_seq_len: int = 16384, # Optimized for single-GPU 4090 (24GB)
+        max_seq_len: int = 16384 * 8, # 128k context support
+        chunk_size: int = 2048,        # Lazy allocation step
     ) -> None:
         self.bits_config = bits; self.bits_key = bits_key; self.bits_value = bits_value
         self.outliers = outliers; self.num_outlier_pairs = num_outlier_pairs; self.dtype = dtype
         self.use_fp8 = use_fp8; self.seed = seed
-        self.max_seq_len = max_seq_len
+        self.max_seq_len = max_seq_len; self.chunk_size = chunk_size
         self._value_quantizer = ValueQuantizer(bits=int(self._get_bits_for_layer(0, False)), use_fp8=use_fp8)
         
         self._sketch_matrices = {}; self._qjl_projections = {}; self._angle_quantizers = {}
         self._compressed = {}
         self.compress_start = 0 
         self._cur_len = {}
+        self._allocated_len = {} # Actual VRAM reserved per layer
+        self._k_rec_cache = {}    # BF16/FP16 cache for sliding windows / hot layers
         self._seen_tokens = 0
         
         # Static Buffers
@@ -72,30 +75,70 @@ class TurboQuantCache:
             self._qjl_projections[i] = proj.to(device); self._angle_quantizers[i] = PolarAngleQuantizer(d=D)
         return self._sketch_matrices[i], self._angle_quantizers[i], self._qjl_projections[i]
 
-    def _allocate_buffers(self, i, B, H, D, device):
+    def _allocate_buffers(self, i, B, H, D, device, initial_len=None):
         if i in self._final_radii_buf: return
         pq = self._angle_quantizers[i]; L = int(math.log2(D))
-        self._final_radii_buf[i] = torch.zeros((B, H, self.max_seq_len, 1), device=device, dtype=self.dtype)
+        
+        # Determine initial allocation (e.g. for prefill)
+        alloc_len = initial_len if initial_len else self.chunk_size
+        alloc_len = min(alloc_len, self.max_seq_len)
+        self._allocated_len[i] = alloc_len
+
+        self._final_radii_buf[i] = torch.zeros((B, H, alloc_len, 1), device=device, dtype=self.dtype)
         p_bufs = []
         for lv in range(L):
             lvl_d = D >> (lv + 1); bits = 4 if lv <= 3 else 2; ppp = max(1, (lvl_d * bits) // 8)
-            p_bufs.append(torch.zeros((B, H, self.max_seq_len, ppp), device=device, dtype=torch.uint8))
+            p_bufs.append(torch.zeros((B, H, alloc_len, ppp), device=device, dtype=torch.uint8))
         self._packed_angles_buf[i] = p_bufs
-        self._packed_qjl_buf[i] = torch.zeros((B, H, self.max_seq_len, D // 8), device=device, dtype=torch.uint8) # signage handled by bitpack
-        self._qjl_gammas_buf[i] = torch.zeros((B, H, self.max_seq_len, 1), device=device, dtype=self.dtype)
+        self._packed_qjl_buf[i] = torch.zeros((B, H, alloc_len, D // 8), device=device, dtype=torch.uint8)
+        self._qjl_gammas_buf[i] = torch.zeros((B, H, alloc_len, 1), device=device, dtype=self.dtype)
         
         # Value Buffers
         v_bits = self._value_quantizer.bits
         if v_bits == 4:
-            self._values_buf[i] = torch.zeros((B, H, self.max_seq_len, D // 2), device=device, dtype=torch.uint8)
-            self._value_states_buf[i] = torch.ones((B, H, self.max_seq_len, 2), device=device, dtype=self.dtype)
+            self._values_buf[i] = torch.zeros((B, H, alloc_len, D // 2), device=device, dtype=torch.uint8)
+            self._value_states_buf[i] = torch.ones((B, H, alloc_len, 2), device=device, dtype=self.dtype)
         elif v_bits == 8:
             v_dtype = torch.float8_e4m3fn if (self._value_quantizer.use_fp8 and hasattr(torch, 'float8_e4m3fn')) else torch.int8
-            self._values_buf[i] = torch.zeros((B, H, self.max_seq_len, D), device=device, dtype=v_dtype)
-            self._value_states_buf[i] = torch.ones((B, H, self.max_seq_len, 1), device=device, dtype=self.dtype)
+            self._values_buf[i] = torch.zeros((B, H, alloc_len, D), device=device, dtype=v_dtype)
+            self._value_states_buf[i] = torch.ones((B, H, alloc_len, 1), device=device, dtype=self.dtype)
         else:
-            self._values_buf[i] = torch.zeros((B, H, self.max_seq_len, D), device=device, dtype=self.dtype)
+            self._values_buf[i] = torch.zeros((B, H, alloc_len, D), device=device, dtype=self.dtype)
+        
+        if self.outliers:
+            self._outlier_vals_buf[i] = torch.zeros((B, H, alloc_len, self.num_outlier_pairs * 2), device=device, dtype=self.dtype)
+            
         self._cur_len[i] = 0
+
+    def _ensure_capacity(self, i, needed_len):
+        """Lazy expansion of buffers."""
+        if needed_len <= self._allocated_len.get(i, 0): return
+        
+        B, H, old_len, _ = self._final_radii_buf[i].shape
+        new_len = min(self.max_seq_len, ((needed_len + self.chunk_size - 1) // self.chunk_size) * self.chunk_size)
+        if new_len == old_len: return
+        
+        print(f"[TurboQuant] Expanding Layer {i} cache: {old_len} -> {new_len}")
+        
+        # Helper for padding
+        def pad(x, nl):
+            shape = list(x.shape); shape[2] = nl - x.shape[2]
+            return torch.cat([x, torch.zeros(shape, device=x.device, dtype=x.dtype)], dim=2)
+
+        self._final_radii_buf[i] = pad(self._final_radii_buf[i], new_len)
+        for lv in range(len(self._packed_angles_buf[i])):
+            self._packed_angles_buf[i][lv] = pad(self._packed_angles_buf[i][lv], new_len)
+        self._packed_qjl_buf[i] = pad(self._packed_qjl_buf[i], new_len)
+        self._qjl_gammas_buf[i] = pad(self._qjl_gammas_buf[i], new_len)
+        self._values_buf[i] = pad(self._values_buf[i], new_len)
+        if i in self._value_states_buf:
+            # States pad with 1.0
+            x = self._value_states_buf[i]; shape = list(x.shape); shape[2] = new_len - x.shape[2]
+            self._value_states_buf[i] = torch.cat([x, torch.ones(shape, device=x.device, dtype=x.dtype)], dim=2)
+        if i in self._outlier_vals_buf:
+            self._outlier_vals_buf[i] = pad(self._outlier_vals_buf[i], new_len)
+        
+        self._allocated_len[i] = new_len
 
     def _compute_qjl(self, k_sk, k_rec_sk, proj):
         u = torch.matmul(k_sk - k_rec_sk, proj)
@@ -143,10 +186,11 @@ class TurboQuantCache:
     def update(self, key_states, value_states, layer_idx, cache_kwargs=None):
         B, H, T_new, D = key_states.shape
         if self.dtype is None: self.dtype = key_states.dtype
-        # LAZY INITIALIZATION: Detect resources and allocate buffers on the fly
         sk, pq, proj = self._get_resources(layer_idx, D, key_states.device)
         if layer_idx not in self._final_radii_buf:
-            self._allocate_buffers(layer_idx, B, H, D, key_states.device)
+            self._allocate_buffers(layer_idx, B, H, D, key_states.device, initial_len=T_new)
+        else:
+            self._ensure_capacity(layer_idx, self._cur_len[layer_idx] + T_new)
 
         if layer_idx == 0: self._seen_tokens += T_new
         if not self._compressed.get(layer_idx):
@@ -155,13 +199,43 @@ class TurboQuantCache:
                 self._raw_values[layer_idx] = torch.cat([self._raw_values.get(layer_idx, torch.empty((B, H, 0, value_states.shape[-1]), device=value_states.device, dtype=self.dtype)), value_states], dim=2)
                 return self._raw_keys[layer_idx], self._raw_values[layer_idx]
             else:
-                self._compress_layer(layer_idx, key_states, value_states); T = self._cur_len[layer_idx]
-                k_rec = self._reconstruct_keys(layer_idx, T)
-                v_rec = self._value_quantizer.dequantize(self._values_buf[layer_idx][:, :, :T, :], self._value_states_buf.get(layer_idx)[:, :, :T, :] if layer_idx in self._value_states_buf else None, self.dtype)
-                return self._inject_outliers(k_rec, layer_idx), v_rec
+                self._compress_layer(layer_idx, key_states, value_states)
+        else:
+            self._update_internal(layer_idx, key_states, value_states)
+
+        T = self._cur_len[layer_idx]
+        # v11: Update reconstruction cache if it exists
+        k_full = self._reconstruct_keys(layer_idx, T)
+        k_full = self._inject_outliers(k_full, layer_idx)
+        self._k_rec_cache[layer_idx] = k_full
+
+        v_full = self._value_quantizer.dequantize(self._values_buf[layer_idx][:, :, :T, :], self._value_states_buf.get(layer_idx)[:, :, :T, :] if layer_idx in self._value_states_buf else None, self.dtype)
+        return k_full, v_full
+
+    def update_compressed(self, key_states, value_states, layer_idx):
+        """Fused path: Update and return internal value tensor only."""
+        B, H, T_new, D = key_states.shape
+        if layer_idx not in self._final_radii_buf:
+            self._allocate_buffers(layer_idx, B, H, D, key_states.device, initial_len=T_new)
+        else:
+            self._ensure_capacity(layer_idx, self._cur_len[layer_idx] + T_new)
         
+        if not self._compressed.get(layer_idx):
+            self._compress_layer(layer_idx, key_states, value_states)
+        else:
+            self._update_internal(layer_idx, key_states, value_states)
+        
+        # v11: Invalidate reconstruction cache for this layer (forces fresh reconstruct on next fused_scores)
+        if layer_idx in self._k_rec_cache:
+            del self._k_rec_cache[layer_idx]
+            
+        T = self._cur_len[layer_idx]
+        return self._value_quantizer.dequantize(self._values_buf[layer_idx][:, :, :T, :], self._value_states_buf.get(layer_idx)[:, :, :T, :] if layer_idx in self._value_states_buf else None, self.dtype)
+
+    def _update_internal(self, layer_idx, key_states, value_states):
+        B, H, T_new, D = key_states.shape
+        sk, pq, proj = self._get_resources(layer_idx, D, key_states.device)
         start = self._cur_len[layer_idx]; T_total = start + T_new
-        if T_total > self.max_seq_len: return key_states, value_states # Overflow fallback
         k_z, _, _ = self._extract_outliers(key_states, layer_idx); k_sk = torch.matmul(k_z, sk).contiguous()
         if is_triton_available() and key_states.is_cuda:
             r_n, p_n = triton_polar_encode(k_sk, pq.get_all_boundaries(), D); k_rs_n = triton_polar_decode(r_n, p_n, pq.get_all_centroids(), D)
@@ -174,9 +248,26 @@ class TurboQuantCache:
         vn, vst = self._value_quantizer.quantize(value_states); self._values_buf[layer_idx][:, :, start:T_total, :] = vn
         if vst is not None: self._value_states_buf[layer_idx][:, :, start:T_total, :] = vst
         self._cur_len[layer_idx] = T_total
-        k_full = self._reconstruct_keys(layer_idx, T_total)
-        v_full = self._value_quantizer.dequantize(self._values_buf[layer_idx][:, :, :T_total, :], self._value_states_buf.get(layer_idx)[:, :, :T_total, :] if layer_idx in self._value_states_buf else None, self.dtype)
-        return self._inject_outliers(k_full, layer_idx), v_full
+
+    def fused_scores(self, q, layer_idx):
+        """Compute Q @ K.T directly from compressed cache representation."""
+        T = self._cur_len[layer_idx]
+        
+        # v11: Hit reconstruction cache
+        if layer_idx in self._k_rec_cache:
+            k_full = self._k_rec_cache[layer_idx]
+            if k_full.shape[2] == T:
+                return torch.matmul(q, k_full.transpose(-1, -2))
+
+        # Miss: Reconstruct once and cache
+        k_full = self._reconstruct_keys(layer_idx, T)
+        k_full = self._inject_outliers(k_full, layer_idx)
+        
+        # Only cache if small (sliding window) or if we have budget
+        if T <= 2048: # Caching sliding window layers is always worth it
+             self._k_rec_cache[layer_idx] = k_full
+
+        return torch.matmul(q, k_full.transpose(-1, -2))
 
     def _reconstruct_keys(self, layer_idx, T=None):
         if layer_idx not in self._final_radii_buf: return None
