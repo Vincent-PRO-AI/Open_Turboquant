@@ -10,7 +10,7 @@ if os.path.exists(readme_path):
 
 setup(
     name="turboquant",
-    version="2.0.0",
+    version="1.0.0",
     description="TurboQuant: KV Cache Compression for LLMs (ICLR 2026) + PolarQuant (AISTATS 2026)",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -31,7 +31,7 @@ setup(
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Science/Research",
-        "License :: OSI Approved :: MIT License",
+        "License :: OSI Approved :: Apache Software License",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
@@ -40,6 +40,6 @@ setup(
         "Programming Language :: Python :: 3.13",
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
     ],
-    license="MIT",
+    license="Apache 2.0",
     keywords="llm quantization kv-cache compression inference triton",
 )
