@@ -1,0 +1,16 @@
+torch>=2.0
+numpy
+scipy
+
+[dev]
+pytest
+triton>=2.1
+transformers>=4.40
+accelerate
+
+[hf]
+transformers>=4.40
+accelerate
+
+[triton]
+triton>=2.1

@@ -1,0 +1,92 @@
+Metadata-Version: 2.4
+Name: tq-impl
+Version: 2.0.0
+Summary: TurboQuant: Near-Optimal KV Cache Compression for LLMs (ICLR 2026)
+Home-page: https://github.com/vincentsoule/tq-impl
+Author: Vincent Soule
+License: Apache-2.0
+Classifier: Development Status :: 4 - Beta
+Classifier: License :: OSI Approved :: Apache Software License
+Classifier: Programming Language :: Python :: 3
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: torch>=2.0
+Requires-Dist: numpy
+Requires-Dist: scipy
+Provides-Extra: triton
+Requires-Dist: triton>=2.1; extra == "triton"
+Provides-Extra: hf
+Requires-Dist: transformers>=4.40; extra == "hf"
+Requires-Dist: accelerate; extra == "hf"
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: triton>=2.1; extra == "dev"
+Requires-Dist: transformers>=4.40; extra == "dev"
+Requires-Dist: accelerate; extra == "dev"
+Dynamic: author
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: license
+Dynamic: license-file
+Dynamic: provides-extra
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+# TurboQuant (Core Implementation) — KV Cache Compression
+
+Open-source implementation of the core concepts from **TurboQuant (ICLR 2026)**.
+
+> [!NOTE]
+> **Current Status**: This version implements Algorithm 1 (Haar-Rotation + Lloyd-Max Scalar Quantization) with 1-bit QJL residual correction. Implementation of the recursive Polar Transformation (PolarQuant) is currently in progress in the `polarquant-v2` branch.
+
+## Key Features (Implemented)
+
+- **3-bit mode**: 4.9x key compression (2-bit MSE + 1-bit QJL).
+- **4-bit mode**: 3.0x key compression (3-bit MSE + 1-bit QJL).
+- **Haar Preconditioning**: Random orthogonal rotation to decorrelate KV dimensions.
+- **Outlier Retention**: Static retention of top 6.25% dimensions in FP16 to stabilize quality.
+- **HuggingFace Integration**: Drop-in compatible with `DynamicCache` and `model.generate()`.
+
+## Performance Analysis (Current Main)
+
+Les résultats ci-dessous sont mesurés sur **Gemma-4-E2B-it**. La similarité cosinus est excellente (>0.99), mais l'accord Top-1 en décodage montre la sensibilité de l'attention compressée sur de nombreuses couches.
+
+| Mode | Key Comp. | Cosine Similarity | Top-1 Agreement (Prefill) | Top-1 Agreement (Decode) |
+|------|-----------|-------------------|---------------------------|--------------------------|
+| **FP16** | 1.0x | 1.0000 | 100% | 100% |
+| **TQ 4-bit** | 3.0x | 0.9999 | 100% | ~51% |
+| **TQ 3-bit** | 4.9x | 0.9998 | 100% | ~13% |
+
+*Note: La dégradation en décodage est due à l'accumulation d'erreurs de quantification sur 35 couches.*
+
+## Installation & Usage
+
+```bash
+pip install -e .
+python playground.py
+```
+
+## How It Works
+
+### Algorithm 1: TurboQuant_MSE
+
+1. Apply a random orthogonal rotation (Haar matrix via QR decomposition) to decorrelate key vector coordinates
+2. Quantize each coordinate independently using a Lloyd-Max optimal scalar quantizer
+3. Store indices as bit-packed uint8
+
+### Algorithm 2: TurboQuant_Prod (QJL)
+
+1. Compute the residual between the unit-norm key and its MSE reconstruction
+2. Apply QJL (Quantized Johnson-Lindenstrauss): 1-bit sign quantization of a random projection of the residual
+3. The combined estimator yields unbiased inner products
+
+## Implementation Roadmap (PolarQuant-v2)
+
+- [ ] Recursive Polar Transformation (Cartesian -> Radius/Angles tree).
+- [ ] Adaptive bit allocation per level.
+- [ ] Fused Triton implementation of polar attention scoring.
