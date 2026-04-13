@@ -19,9 +19,11 @@ from tq_impl import AutoTurboQuant, TurboQuantCache
 model = AutoModelForCausalLM.from_pretrained('...')
 
 # 2. Universal Architecture-Agnostic Patching
+# PolarQuant (Angular Quantization) & QJL (Residual Correction) are AUTOMATICALLY fused here.
 model = AutoTurboQuant.patch(model)
 
 # 3. Deploy with Compression-Aware Cache
+# Default 4-bit precision uses the fused Triton kernels for maximum speed.
 cache = TurboQuantCache(max_seq_len=65536)
 outputs = model.generate(..., past_key_values=cache)
 ```
