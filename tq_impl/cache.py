@@ -128,7 +128,7 @@ class TurboQuantCache:
         k_z, _, _ = self._extract_outliers(raw, i)
         k_sk = torch.matmul(k_z, sk).contiguous()
         if is_triton_available() and raw.is_cuda:
-            rf, pa = triton_polar_encode(k_sk, pq.get_all_boundaries(), D); k_rs = triton_polar_decode(rf, pa, pq.get_all_centroids(), D)
+            rf, pa = triton_polar_encode(k_sk, pq.get_all_boundaries(device=raw.device), D); k_rs = triton_polar_decode(rf, pa, pq.get_all_centroids(device=raw.device), D)
         else:
             rf, angs = recursive_polar_transform(k_sk); idx = pq.quantize_all(angs); pa = pq.pack_all(idx); k_rs = _polar_reconstruct_pytorch(rf, pa, pq)
         p_qjl, g = self._compute_qjl(k_sk, k_rs, proj)
@@ -164,7 +164,7 @@ class TurboQuantCache:
         if T_total > self.max_seq_len: return key_states, value_states # Overflow fallback
         k_z, _, _ = self._extract_outliers(key_states, layer_idx); k_sk = torch.matmul(k_z, sk).contiguous()
         if is_triton_available() and key_states.is_cuda:
-            r_n, p_n = triton_polar_encode(k_sk, pq.get_all_boundaries(), D); k_rs_n = triton_polar_decode(r_n, p_n, pq.get_all_centroids(), D)
+            r_n, p_n = triton_polar_encode(k_sk, pq.get_all_boundaries(device=key_states.device), D); k_rs_n = triton_polar_decode(r_n, p_n, pq.get_all_centroids(device=key_states.device), D)
         else:
             r_n, ang_n = recursive_polar_transform(k_sk); idx_n = pq.quantize_all(ang_n); p_n = pq.pack_all(idx_n); k_rs_n = _polar_reconstruct_pytorch(r_n, p_n, pq)
         p_qjl_n, g_n = self._compute_qjl(k_sk, k_rs_n, proj)
@@ -207,3 +207,37 @@ class TurboQuantCache:
         else:
             ql = int(q_len)
         return self.get_seq_length(layer_idx) + ql, 0
+
+    @property
+    def seen_tokens(self) -> int:
+        """Total tokens seen by the cache (across all updates)."""
+        return self._seen_tokens
+
+    def __len__(self) -> int:
+        """Number of layers currently stored in the cache."""
+        return max(len(self._cur_len), len(self._raw_keys))
+
+    def memory_footprint(self) -> Dict[str, Any]:
+        """Calculate the current memory usage and compression ratio."""
+        total_bytes = 0
+        # Sum up all buffer sizes
+        for i in self._cur_len:
+            total_bytes += self._final_radii_buf[i].element_size() * self._final_radii_buf[i].nelement()
+            for pb in self._packed_angles_buf[i]:
+                total_bytes += pb.element_size() * pb.nelement()
+            total_bytes += self._sketched_buffer_buf[i].element_size() * self._sketched_buffer_buf[i].nelement()
+            total_bytes += self._packed_qjl_buf[i].element_size() * self._packed_qjl_buf[i].nelement()
+            total_bytes += self._qjl_gammas_buf[i].element_size() * self._qjl_gammas_buf[i].nelement()
+            total_bytes += self._values_buf[i].element_size() * self._values_buf[i].nelement()
+            if i in self._value_states_buf:
+                total_bytes += self._value_states_buf[i].element_size() * self._value_states_buf[i].nelement()
+        
+        # Approximate key compression ratio (Bits per coord)
+        kb = self._get_bits_for_layer(0, True)
+        cr = 4.9 if kb <= 3.0 else 3.0
+
+        return {
+            "total_bytes": total_bytes,
+            "total_mbytes": total_bytes / (1024 * 1024),
+            "key_compression_ratio": cr,
+        }

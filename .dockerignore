@@ -1,0 +1,9 @@
+.venv_wsl/
+.venv/
+.git/
+__pycache__/
+*.pyc
+.codebook_cache/
+benchmarks/*.txt
+data/
+extra/

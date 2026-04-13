@@ -10,8 +10,8 @@ if root not in sys.path:
     
 from tq_impl import AutoTurboQuant, TurboQuantCache
 
-# Par défaut, un petit modèle gemma-2b, surchargeable via MODEL_ID
-MODEL_ID = os.environ.get("MODEL_ID", "google/gemma-2b-it")
+# Par défaut, un modèle léger et NON-GATED (pas besoin de token HF)
+MODEL_ID = os.environ.get("MODEL_ID", "Qwen/Qwen2.5-0.5B-Instruct")
 
 def main():
     print("="*60)

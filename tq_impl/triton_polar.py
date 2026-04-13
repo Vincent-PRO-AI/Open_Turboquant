@@ -169,7 +169,7 @@ if _TR_AVAIL:
             return rf, pa
 
         B, H, T, _ = k_sk.shape; L = int(math.log2(D))
-        bd_flat = boundaries.to(k_sk.device).contiguous().to(torch.float32)
+        bd_flat = boundaries.to(k_sk.device).contiguous().view(-1).to(torch.float32)
         offsets = [0]
         for lv in range(L):
             n_p = D >> (lv + 1); bits = 4 if lv <= 3 else 2
@@ -178,7 +178,17 @@ if _TR_AVAIL:
         R_out = torch.empty(B, H, T, 1, device=k_sk.device, dtype=k_sk.dtype)
         P_base = torch.empty(offsets[-1], device=k_sk.device, dtype=torch.uint8)
         scratch = torch.empty(B * H * T * 8192, device=k_sk.device, dtype=torch.float32)
-        _triton_polar_encode_kernel[(T, H, B)](k_sk, R_out, P_base, offsets_t, bd_flat, scratch, B, H, T, D, L, k_sk.stride(0), k_sk.stride(1), k_sk.stride(2), k_sk.stride(3), R_out.stride(0), R_out.stride(1), R_out.stride(2), 8192, num_warps=1)
+        
+        with torch.cuda.device(k_sk.device):
+            _triton_polar_encode_kernel[(T, H, B)](
+                k_sk, R_out, P_base, offsets_t, bd_flat, scratch,
+                B, H, T, D, L,
+                k_sk.stride(0), k_sk.stride(1), k_sk.stride(2), k_sk.stride(3),
+                R_out.stride(0), R_out.stride(1), R_out.stride(2),
+                8192,
+                num_warps=1
+            )
+        
         p_a = []
         for lv in range(L):
             n_p = D >> (lv+1); bits = 4 if lv <= 3 else 2; ppp = max(1, (n_p*bits)//8)
@@ -193,17 +203,29 @@ if _TR_AVAIL:
             return recursive_polar_inverse(final_radii, rec_angs)
 
         B, H, T, _ = final_radii.shape; L = int(math.log2(D))
-        ct_flat = centroids.to(final_radii.device).contiguous().to(torch.float32).cuda()
+        ct_flat = centroids.to(final_radii.device).contiguous().to(torch.float32)
         offsets = [0]
         for lv in range(L):
             n_p = D >> (lv+1); bits = 4 if lv <= 3 else 2
             ppp = max(1, (n_p*bits)//8); offsets.append(offsets[-1] + B * H * T * ppp)
-        offsets_t = torch.tensor(offsets[:-1], dtype=torch.int64, device=final_radii.device).cuda()
-        P_base = torch.empty(offsets[-1], device=final_radii.device, dtype=torch.uint8).cuda()
-        for lv, pa in enumerate(packed_angles): P_base[offsets[lv]:offsets[lv+1]] = pa.reshape(-1)
-        K_out = torch.empty(B, H, T, D, device=final_radii.device, dtype=final_radii.dtype).cuda()
-        scratch = torch.empty(B * H * T * 8192, device=final_radii.device, dtype=torch.float32).cuda()
-        _triton_polar_decode_kernel[(T, H, B)](final_radii, P_base, offsets_t, ct_flat, K_out, scratch, B, H, T, D, L, final_radii.stride(0), final_radii.stride(1), final_radii.stride(2), K_out.stride(0), K_out.stride(1), K_out.stride(2), K_out.stride(3), 8192, num_warps=1)
+        
+        offsets_t = torch.tensor(offsets[:-1], dtype=torch.int64, device=final_radii.device)
+        P_base = torch.empty(offsets[-1], device=final_radii.device, dtype=torch.uint8)
+        for lv, pa in enumerate(packed_angles):
+            P_base[offsets[lv]:offsets[lv+1]] = pa.to(final_radii.device).reshape(-1)
+            
+        K_out = torch.empty(B, H, T, D, device=final_radii.device, dtype=final_radii.dtype)
+        scratch = torch.empty(B * H * T * 8192, device=final_radii.device, dtype=torch.float32)
+        
+        with torch.cuda.device(final_radii.device):
+            _triton_polar_decode_kernel[(T, H, B)](
+                final_radii, P_base, offsets_t, ct_flat, K_out, scratch,
+                B, H, T, D, L,
+                final_radii.stride(0), final_radii.stride(1), final_radii.stride(2),
+                K_out.stride(0), K_out.stride(1), K_out.stride(2), K_out.stride(3),
+                8192,
+                num_warps=1
+            )
         return K_out
 else:
     def triton_polar_encode(*args, **kwargs): raise RuntimeError("Triton unavailable")
