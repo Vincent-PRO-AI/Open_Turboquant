@@ -23,6 +23,7 @@ setup(
         "torch>=2.0.0",
         "transformers>=4.40.0",
         "numpy>=1.24.0",
+        "accelerate>=0.26.0",
     ],
     extras_require={
         "triton": ["triton>=2.2.0"],
