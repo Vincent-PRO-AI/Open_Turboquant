@@ -9,7 +9,7 @@ on:
 env:
   REGISTRY: ghcr.io
   # Hardcoded lowercase repository name to prevent Docker push errors
-  IMAGE_NAME: vincent-pro-ai/open_turboquant
+  IMAGE_NAME: vincent-pro-ai/open-turboquant
 
 jobs:
   build-and-push-image:
@@ -45,15 +45,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata (tags, labels) for Docker
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: type=edge,branch=main
-
       - name: Build and push Docker image
         run: |
-          # Use standard docker build now that disk is expanded
-          docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest .
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          # Use standard docker build with multiple tags for platform compatibility
+          REGISTRY_PATH=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          docker build -t $REGISTRY_PATH:latest -t $REGISTRY_PATH:main -t $REGISTRY_PATH:v1.0.0 .
+          
+          docker push $REGISTRY_PATH:latest
+          docker push $REGISTRY_PATH:main
+          docker push $REGISTRY_PATH:v1.0.0
