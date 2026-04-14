@@ -1,5 +1,5 @@
 # STAGE 1: Builder
-FROM nvidia/cuda:12.1.1-devel-ubuntu22.04 AS builder
+FROM python:3.10-slim AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /app

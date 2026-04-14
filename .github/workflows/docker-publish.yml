@@ -30,6 +30,19 @@ jobs:
           remove-codeql: 'true'
           remove-docker-images: 'true'
 
+      - name: Migrate Docker Root & Manual Cleanup
+        run: |
+          sudo systemctl stop docker.service
+          sudo systemctl stop docker.socket
+          sudo mv /var/lib/docker /home/runner/work/docker-storage
+          sudo ln -s /home/runner/work/docker-storage /var/lib/docker
+          sudo systemctl start docker.service
+          # Manual cleanup of large directories not covered by the action
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          df -h
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
