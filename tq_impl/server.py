@@ -2,6 +2,10 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import torch
 import time
+import sys
+
+print("DEBUG: Starting TurboQuant Inference Server...", file=sys.stderr)
+print(f"DEBUG: Python version: {sys.version}", file=sys.stderr)
 
 app = FastAPI(title="TurboQuant Inference Server")
 

@@ -49,8 +49,8 @@ jobs:
         run: |
           # Use standard docker build with multiple tags for platform compatibility
           REGISTRY_PATH=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          docker build -t $REGISTRY_PATH:latest -t $REGISTRY_PATH:main -t $REGISTRY_PATH:v1.1.0 .
+          docker build -t $REGISTRY_PATH:latest -t $REGISTRY_PATH:main -t $REGISTRY_PATH:v1.2.0 .
           
           docker push $REGISTRY_PATH:latest
           docker push $REGISTRY_PATH:main
-          docker push $REGISTRY_PATH:v1.1.0
+          docker push $REGISTRY_PATH:v1.2.0
