@@ -19,22 +19,24 @@ jobs:
       packages: write
 
     steps:
-      - name: Maximize build space
-        uses: easimon/maximize-build-space@v10
-        with:
-          root-reserve-mb: 512
-          swap-size-mb: 1024
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
-          remove-codeql: 'true'
-          remove-docker-images: 'true'
+      - name: Atomic Host Cleanup & Docker Reconfiguration
+        run: |
+          # Brute force cleanup of the biggest offenders on the system partition
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache
+          
+          # Reconfigure Docker to use the /mnt partition directly
+          sudo systemctl stop docker.service
+          sudo systemctl stop docker.socket
+          sudo mkdir -p /mnt/docker-data
+          echo '{"data-root": "/mnt/docker-data"}' | sudo tee /etc/docker/daemon.json
+          sudo systemctl start docker.service
+          df -h
 
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
 
       - name: Log in to the Container registry
         uses: docker/login-action@v3
@@ -51,11 +53,7 @@ jobs:
           tags: type=edge,branch=main
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          # Streaming push: directly to registry, no local storage
-          outputs: type=registry,push=true
+        run: |
+          # Use standard docker build now that disk is expanded
+          docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest .
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
