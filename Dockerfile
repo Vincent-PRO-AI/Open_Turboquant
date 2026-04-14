@@ -17,4 +17,8 @@ COPY . /app/
 RUN pip install --no-cache-dir accelerate bitsandbytes scipy matplotlib transformers
 RUN pip install --no-cache-dir -e .
 
-CMD ["/bin/bash"]
+# Expose the API port
+EXPOSE 8000
+
+# Run the FastAPI server
+CMD ["uvicorn", "tq_impl.server:app", "--host", "0.0.0.0", "--port", "8000"]

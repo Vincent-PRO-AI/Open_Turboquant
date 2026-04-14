@@ -20,10 +20,12 @@ setup(
     packages=find_packages(),
     python_requires=">=3.9",
     install_requires=[
-        "torch>=2.0.0",
-        "transformers>=4.40.0",
-        "numpy>=1.24.0",
+        "torch>=2.2.0",
+        "transformers>=4.37.0",
+        "triton>=2.1.0",
         "accelerate>=0.26.0",
+        "fastapi",
+        "uvicorn",
     ],
     extras_require={
         "triton": ["triton>=2.2.0"],
