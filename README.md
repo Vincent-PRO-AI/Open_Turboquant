@@ -4,7 +4,7 @@
 [![CUDA](https://img.shields.io/badge/CUDA-12.1+-green.svg)](https://developer.nvidia.com/cuda-toolkit)
 [![Blackwell Verified](https://img.shields.io/badge/Blackwell-Verified-blue.svg)](https://www.nvidia.com/en-us/data-center/nvidias-rtx-6000-ada/)
 
-**Open TurboQuant** is the definitive universal, architecture-agnostic KV cache compression engine. It automatically transforms any `transformers`-based model into a high-efficiency inference engine with **3.64x VRAM reduction**, powered by **PolarQuant (AISTATS 2026)** and **TurboQuant (ICLR 2026)**.
+**Open TurboQuant** is the definitive universal, architecture-agnostic KV cache compression engine. It automatically transforms any `transformers`-based model into a high-efficiency inference engine with **3.64x VRAM reduction**, powered by **PolarQuant (AISTATS 2026)** and **TurboQuant (ICLR 2026)**. 
 
 ---
 
@@ -33,6 +33,10 @@ outputs = model.generate(..., past_key_values=cache)
 ## 📊 Benchmark Results: The Blackwell Audit
 
 Verified on **Dual NVIDIA RTX 6000 Blackwell** (96GB per GPU, 192GB VRAM total).
+
+and also RTX 4090 ada lovelace , RTX 5080 , A100 
+
+and as models Gemma4 2B 
 
 | Model | Architecture | VRAM Baseline (64k context) | **VRAM TurboQuant** | **Gain** |
 | :--- | :--- | :--- | :--- | :--- |
