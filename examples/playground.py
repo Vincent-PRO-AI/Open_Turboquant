@@ -24,8 +24,12 @@ if root not in sys.path:
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
 from tq_impl import (
-    TurboQuantCache, AutoTurboQuant, compression_ratio,
-    patch_model_for_turboquant, unpatch_model_for_turboquant
+    TurboQuantCache, 
+    patch_model_for_turboquant, 
+    unpatch_model_for_turboquant,
+    is_triton_available,
+    triton_version,
+    compression_ratio
 )
 
 
@@ -82,6 +86,8 @@ def run_turboquant(model, tokenizer, prompt, bits_key, max_new_tokens):
         outliers=True,
         dtype=torch.float16,
     )
+    # Fresh patch
+    unpatch_model_for_turboquant(model)
     patch_model_for_turboquant(model, cache)
 
     mem_before = get_gpu_mem_mb()

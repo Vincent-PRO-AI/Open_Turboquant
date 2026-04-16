@@ -9,14 +9,14 @@ class PolarAngleQuantizer:
     Hierarchical Angle Quantizer for PolarQuant v2 (AISTATS 2026).
     Uses optimal non-uniform codebooks for the recursive angular distributions.
     """
-    def __init__(self, d: int = 128):
+    def __init__(self, d: int = 128, bits: int = 4):
         self.d = d
+        self.bits = bits
         self.n_levels = int(math.log2(d))
 
     def _get_bits(self, level: int) -> int:
-        # Boost first 4 levels to 4 bits for maximum precision in the early tree
-        if level <= 3: return 4
-        return 2
+        # Align with requested bit-depth to restore elite accuracy
+        return self.bits
 
     def quantize_level(self, phi: torch.Tensor, level: int) -> torch.Tensor:
         """Find nearest indices in the level's optimal codebook."""
@@ -95,30 +95,30 @@ class PolarAngleQuantizer:
     # Methods required by triton_polar / cache.py for Triton fast path
     # ------------------------------------------------------------------
 
-    def get_all_boundaries(self) -> torch.Tensor:
+    def get_all_boundaries(self, device: str = "cpu") -> torch.Tensor:
         """
         Return a flat tensor of all level boundaries for Triton kernels.
         Shape: (n_levels, max_boundaries) padded with inf.
         """
         max_bd = 16  # 4-bit = 15 boundaries max, pad to 16 for alignment
-        all_bd = torch.full((self.n_levels, max_bd), float('inf'), dtype=torch.float32)
+        all_bd = torch.full((self.n_levels, max_bd), float('inf'), device=device, dtype=torch.float32)
         for lv in range(self.n_levels):
             bits = self._get_bits(lv)
-            bd = get_angular_boundaries(bits, lv)
+            bd = get_angular_boundaries(bits, lv).to(device)
             n = min(bd.shape[0], max_bd)
             all_bd[lv, :n] = bd[:n]
         return all_bd
 
-    def get_all_centroids(self) -> torch.Tensor:
+    def get_all_centroids(self, device: str = "cpu") -> torch.Tensor:
         """
         Return a flat tensor of all level centroids for Triton kernels.
         Shape: (n_levels, max_centroids) padded with 0.
         """
         max_ct = 16  # 4-bit = 16 centroids max
-        all_ct = torch.zeros((self.n_levels, max_ct), dtype=torch.float32)
+        all_ct = torch.zeros((self.n_levels, max_ct), device=device, dtype=torch.float32)
         for lv in range(self.n_levels):
             bits = self._get_bits(lv)
-            cb = get_angular_codebook(bits, lv)
+            cb = get_angular_codebook(bits, lv).to(device)
             n = min(cb.shape[0], max_ct)
             all_ct[lv, :n] = cb[:n]
         return all_ct

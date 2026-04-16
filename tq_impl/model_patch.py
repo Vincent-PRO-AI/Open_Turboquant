@@ -28,7 +28,7 @@ from .cache import TurboQuantCache
 # ---------------------------------------------------------------------------
 
 _ATTENTION_NAMES = (
-    "LlamaAttention", "MistralAttention", "Qwen2Attention",
+    "Attention", "SelfAttention", "SdpaAttention", "FlashAttention2", "Llama", "Mistral", "Qwen2", "Gemma",
     "Phi3Attention", "GemmaAttention", "Gemma2Attention", 
     "Gemma4Attention", "Gemma4TextAttention",
     "FalconAttention", "GPTNeoXAttention", "OPTAttention",
@@ -138,7 +138,8 @@ def _fused_decode(
     head_dim: int,
     num_heads: int,
     num_kv_heads: int,
-    scale: float,
+    outliers: bool = True, num_outlier_pairs: int = 8,
+    scale: float = 1.0,
     position_embeddings: Optional[Any] = None,
 ) -> torch.Tensor:
     """
@@ -149,6 +150,7 @@ def _fused_decode(
     """
     B = hidden_states.shape[0]
     dtype = hidden_states.dtype
+    if layer_idx == 0: print("[TurboQuant] Fused Decode Path Active", flush=True)
 
     q = self_attn.q_proj(hidden_states)
     k = self_attn.k_proj(hidden_states)
@@ -170,23 +172,21 @@ def _fused_decode(
              # Initial allocation matches window if needed
              pass
 
-    # Update cache: k, v are stored, quantized values returned
-    vals = cache.update_compressed(k, v, layer_idx)
-
-    # RoPE — compatible with both old and new transformers
-    # Use position_embeddings if provided (Gemma 4 style)
+    # 🚀 v11: Apply RoPE BEFORE compression to ensure attention scores 
+    # are calculated in the same space (standard for most KV caches).
     if position_embeddings is not None:
-        # Import apply_rotary_pos_emb from Gemma 4 module
         try:
             from transformers.models.gemma4.modeling_gemma4 import apply_rotary_pos_emb as apply_fn
             q, k = apply_fn(q, k, *position_embeddings)
         except Exception:
-            # Fallback to standard RoPE calculation if import/apply fails
             cache_len = cache.get_seq_length(layer_idx)
             q, k = _apply_rope_compat(self_attn, q, k, cache_len, hidden_states.device)
     else:
         cache_len = cache.get_seq_length(layer_idx)
         q, k = _apply_rope_compat(self_attn, q, k, cache_len, hidden_states.device)
+
+    # Update cache: k, v are stored (rotated), quantized values returned
+    vals = cache.update_compressed(k, v, layer_idx)
 
     # 🚀 v10 Fused scores [B, H_q, 1, T] — directly on packed data
     scores = cache.fused_scores(q, layer_idx) * scale
@@ -218,12 +218,15 @@ def _make_patched_fwd(original_fwd, layer_idx: int, cache_ref):
         # 1. Resolve hidden_states
         hidden_states = args[0] if len(args) > 0 else kwargs.get('hidden_states')
         
-        # 2. Resolve TurboQuantCache
-        # Check all possible HF cache argument names
+        # 2. Resolve TurboQuantCache (Brute force search)
         tq = kwargs.get('past_key_values', kwargs.get('past_key_value'))
-        if tq is None and len(args) >= 4:
-            # Gemma4/Llama/Mistral: (self, hidden_states, embeddings, mask, past_key_values, ...)
-            tq = args[3]
+        if tq is None:
+            for a in args:
+                if type(a).__name__ == "TurboQuantCache":
+                    tq = a; break
+        
+        if layer_idx == 0 and hidden_states is not None and hidden_states.shape[1] == 1:
+            print(f"DEBUG[Patch] L0: tq={type(tq).__name__} hidden={hidden_states.shape} kwargs={list(kwargs.keys())} args_len={len(args)}", flush=True)
             
         if not isinstance(tq, TurboQuantCache) and cache_ref is not None:
             try:
@@ -235,10 +238,20 @@ def _make_patched_fwd(original_fwd, layer_idx: int, cache_ref):
         use_cache = kwargs.get('use_cache', True)
         output_attentions = kwargs.get('output_attentions', False)
         
-        if (isinstance(tq, TurboQuantCache) and not output_attentions 
-            and hidden_states is not None and hidden_states.shape[1] == 1):
+        is_tq = type(tq).__name__ == "TurboQuantCache"
+        q_len = hidden_states.shape[1] if hidden_states is not None else -1
+        
+        # DEBUG: Only for the first few decode tokens
+        if is_tq and q_len == 1 and layer_idx == 0:
+            print(f"DEBUG[Patch] tq_type={type(tq).__name__} q_len={q_len} output_attentions={output_attentions}", flush=True)
+
+        if (is_tq and hidden_states is not None):
             hd = getattr(self, 'head_dim', None)
             nh = getattr(self, 'num_heads', None)
+            
+            # DEBUG
+            if layer_idx == 0: print(f"DEBUG[Patch] Entered fused block! hd={hd} nh={nh}", flush=True)
+
             nkv = getattr(self, 'num_key_value_heads', getattr(self, 'num_kv_heads', nh))
             sc = getattr(self, 'scaling', None) or (1.0 / math.sqrt(hd)) if hd else None
 
@@ -282,16 +295,22 @@ def patch_model_for_turboquant(
         return
 
     for li, attn in layers:
-        if getattr(attn, _PATCHED, False):
-            continue
-        orig = attn.__class__.forward
-        pfwd = _make_patched_fwd(orig, li, ref)
-        attn.forward = types.MethodType(pfwd, attn)
-        setattr(attn, _PATCHED, True)
-        setattr(attn, "_tq_orig_fwd", orig)
+        cls_name = type(attn).__name__
+        if not getattr(attn, _PATCHED, False):
+            orig = attn.__class__.forward
+            pfwd = _make_patched_fwd(orig, li, ref)
+            attn.forward = types.MethodType(pfwd, attn)
+            setattr(attn, _PATCHED, True)
+            setattr(attn, "_tq_orig_fwd", orig)
+            print(f"[TurboQuant] Patched {cls_name} at layer {li}")
+        else:
+            # Refresh context if already patched
+            orig = getattr(attn, "_tq_orig_fwd")
+            pfwd = _make_patched_fwd(orig, li, ref)
+            attn.forward = types.MethodType(pfwd, attn)
 
     model._tq_patched = True
-    print(f"[TurboQuant] Patched {len(layers)} attention layers.")
+    print(f"[TurboQuant] Total {len(layers)} attention layers patched.")
 
 
 def unpatch_model_for_turboquant(model: torch.nn.Module) -> None:
