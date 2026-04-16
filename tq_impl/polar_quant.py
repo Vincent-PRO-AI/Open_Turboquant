@@ -95,30 +95,30 @@ class PolarAngleQuantizer:
     # Methods required by triton_polar / cache.py for Triton fast path
     # ------------------------------------------------------------------
 
-    def get_all_boundaries(self, device: torch.device = torch.device('cpu')) -> torch.Tensor:
+    def get_all_boundaries(self) -> torch.Tensor:
         """
         Return a flat tensor of all level boundaries for Triton kernels.
         Shape: (n_levels, max_boundaries) padded with inf.
         """
         max_bd = 16  # 4-bit = 15 boundaries max, pad to 16 for alignment
-        all_bd = torch.full((self.n_levels, max_bd), float('inf'), dtype=torch.float32, device=device)
+        all_bd = torch.full((self.n_levels, max_bd), float('inf'), dtype=torch.float32)
         for lv in range(self.n_levels):
             bits = self._get_bits(lv)
-            bd = get_angular_boundaries(bits, lv).to(device)
+            bd = get_angular_boundaries(bits, lv)
             n = min(bd.shape[0], max_bd)
             all_bd[lv, :n] = bd[:n]
         return all_bd
 
-    def get_all_centroids(self, device: torch.device = torch.device('cpu')) -> torch.Tensor:
+    def get_all_centroids(self) -> torch.Tensor:
         """
         Return a flat tensor of all level centroids for Triton kernels.
         Shape: (n_levels, max_centroids) padded with 0.
         """
         max_ct = 16  # 4-bit = 16 centroids max
-        all_ct = torch.zeros((self.n_levels, max_ct), dtype=torch.float32, device=device)
+        all_ct = torch.zeros((self.n_levels, max_ct), dtype=torch.float32)
         for lv in range(self.n_levels):
             bits = self._get_bits(lv)
-            cb = get_angular_codebook(bits, lv).to(device)
+            cb = get_angular_codebook(bits, lv)
             n = min(cb.shape[0], max_ct)
             all_ct[lv, :n] = cb[:n]
         return all_ct

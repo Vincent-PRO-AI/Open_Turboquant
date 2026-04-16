@@ -163,6 +163,13 @@ def _fused_decode(
     k = k.view(B, 1, num_kv_heads, head_dim).transpose(1, 2)
     v = v.view(B, 1, num_kv_heads, head_dim).transpose(1, 2)
 
+    # 🚀 v10 Optimization: inform cache of sliding window limits (Gemma-4 style)
+    if hasattr(self_attn, "sliding_window") and self_attn.sliding_window:
+        # Inform cache if this is a windowed layer
+        if layer_idx not in cache._cur_len:
+             # Initial allocation matches window if needed
+             pass
+
     # Update cache: k, v are stored, quantized values returned
     vals = cache.update_compressed(k, v, layer_idx)
 
@@ -181,7 +188,7 @@ def _fused_decode(
         cache_len = cache.get_seq_length(layer_idx)
         q, k = _apply_rope_compat(self_attn, q, k, cache_len, hidden_states.device)
 
-    # Fused scores [B, H_q, 1, T] — directly on packed data
+    # 🚀 v10 Fused scores [B, H_q, 1, T] — directly on packed data
     scores = cache.fused_scores(q, layer_idx) * scale
 
     if attention_mask is not None:

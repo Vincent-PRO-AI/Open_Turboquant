@@ -1,24 +1,27 @@
-FROM pytorch/pytorch:2.2.0-cuda12.1-cudnn8-runtime
+FROM pytorch/pytorch:2.11.0-cuda13.1-cudnn9-devel
 
-# Prevent interactive prompts
+# Set non-interactive to avoid prompt hangs
 ENV DEBIAN_FRONTEND=noninteractive
 
-WORKDIR /app
-
-# Install only the tools needed for Triton JIT and the library
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Install system dependencies for Triton and model building
+RUN apt-get update && apt-get install -y \
     git \
-    build-essential \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY . /app/
+WORKDIR /workspace
 
-# Install the dependencies and the package
-RUN pip install --no-cache-dir accelerate bitsandbytes scipy matplotlib transformers
-RUN pip install --no-cache-dir -e .
+# Copy project requirements
+COPY requirements.txt .
 
-# Expose the API port
-EXPOSE 8000
+# Install dependencies natively under Linux
+# Triton will install successfully here
+RUN pip install -r requirements.txt
 
-# Run the FastAPI server using the python module syntax (more robust)
-CMD ["python3", "-m", "uvicorn", "tq_impl.server:app", "--host", "0.0.0.0", "--port", "8000"]
+# Pre-install core library for development mode
+RUN pip install -e .
+
+# Command to run (defaults to bash overlay)
+CMD ["/bin/bash"]

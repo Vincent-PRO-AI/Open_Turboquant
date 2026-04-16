@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 from .cache import TurboQuantCache
 from .universal import AutoTurboQuant
 from .model_patch import patch_model_for_turboquant, unpatch_model_for_turboquant
@@ -17,3 +18,10 @@ __all__ = [
     'ValueQuantizer', 'get_codebook', 'get_boundaries', 'expected_mse',
     'compression_ratio', 'packed_bytes_per_position'
 ]
+=======
+from .cache import TurboQuantCache
+from .universal import AutoTurboQuant
+from .model_patch import patch_model_for_turboquant, unpatch_model_for_turboquant
+
+__all__ = ['TurboQuantCache', 'AutoTurboQuant', 'patch_model_for_turboquant', 'unpatch_model_for_turboquant']
+>>>>>>> polarquant-v2

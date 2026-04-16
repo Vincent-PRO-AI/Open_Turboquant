@@ -1,6 +1,6 @@
 # 🚀 Open TurboQuant: Universal KV Cache Compression Engine
 
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![CUDA](https://img.shields.io/badge/CUDA-12.1+-green.svg)](https://developer.nvidia.com/cuda-toolkit)
 [![Blackwell Verified](https://img.shields.io/badge/Blackwell-Verified-blue.svg)](https://www.nvidia.com/en-us/data-center/nvidias-rtx-6000-ada/)
 
@@ -19,11 +19,9 @@ from tq_impl import AutoTurboQuant, TurboQuantCache
 model = AutoModelForCausalLM.from_pretrained('...')
 
 # 2. Universal Architecture-Agnostic Patching
-# PolarQuant (Angular Quantization) & QJL (Residual Correction) are AUTOMATICALLY fused here.
 model = AutoTurboQuant.patch(model)
 
 # 3. Deploy with Compression-Aware Cache
-# Default 4-bit precision uses the fused Triton kernels for maximum speed.
 cache = TurboQuantCache(max_seq_len=65536)
 outputs = model.generate(..., past_key_values=cache)
 ```
@@ -47,11 +45,16 @@ Verified on **Dual NVIDIA RTX 6000 Blackwell** (96GB per GPU, 192GB VRAM total).
 
 ## 📂 Repository Structure
 
-- **`tq_impl/`**: Core library (PolarQuant algorithm, Cache, Triton kernels).
-- **`examples/`**: Ready-to-use demos and interactive playgrounds.
-- **`benchmarks/`**: VRAM performance and stress testing scripts.
-- **`tests/`**: Unit tests and functional validation suite.
-- **`scripts/`**: Automation tools for sweeps and plotting.
+- **`tq_impl/`**: Core library (Universal Patcher, Cache, Triton kernels).
+- **`examples/`**: Ready-to-use demos (`demo_turboquant.py`, `playground.py`).
+- **`benchmarks/`**: VRAM & Quality audit scripts.
+- **`tests/`**: Functional validation suite (`test_v2.py`, `test_polarquant.py`).
+- **`scripts/`**: Automation and plot generation tools.
+- **`data/`**: Raw benchmark results (JSON).
+- **`docs/`**: Performance reports and audit logs.
+- **`extra/`**:
+  - `inspection/`: Model architecture & GPU diagnostic tools.
+  - `debug/`: Low-level kernel diagnostic scripts.
 
 ---
 
