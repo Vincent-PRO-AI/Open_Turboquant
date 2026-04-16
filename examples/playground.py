@@ -23,7 +23,10 @@ if root not in sys.path:
 
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
-from tq_impl import TurboQuantCache, AutoTurboQuant, compression_ratio
+from tq_impl import (
+    TurboQuantCache, AutoTurboQuant, compression_ratio,
+    patch_model_for_turboquant, unpatch_model_for_turboquant
+)
 
 
 def get_gpu_mem_mb():
