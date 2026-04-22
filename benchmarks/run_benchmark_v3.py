@@ -18,11 +18,12 @@ if root not in sys.path:
 # Config
 # ---------------------------------------------------------------------------
 
-MODEL_ID       = "Qwen/Qwen2.5-7B-Instruct"
+MODEL_ID       = "google/gemma-4-31B-it"
 MAX_NEW_TOKENS = 64
-CONTEXT_SIZES  = [512, 1024, 2048] # Reduced for fast baseline
+CONTEXT_SIZES  = [1024, 8192, 32768]
 BIT_MODES      = [4, 3]     # Test 4-bit first (better quality), then 3-bit
 TEST_FUSED     = True
+TOKEN          = os.getenv("HF_TOKEN")
 
 # ---------------------------------------------------------------------------
 # GPU check
@@ -52,7 +53,7 @@ from tq_impl import (
     expected_mse, compression_ratio,
 )
 
-print(f"  Triton: {'v' + triton_version() if is_triton_available() else 'non disponible'}")
+print(f"  Triton: {'v' + triton_version if is_triton_available() else 'non disponible'}")
 
 # Ratios will be displayed after model load to get head_dim
 # (The code block was moved below AutoModelForCausalLM.from_pretrained)
@@ -71,12 +72,13 @@ quantization_config = BitsAndBytesConfig(
     bnb_4bit_use_double_quant=True,
 )
 
-tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, trust_remote_code=True)
+tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, trust_remote_code=True, token=TOKEN)
 model = AutoModelForCausalLM.from_pretrained(
     MODEL_ID, 
-    device_map={"": 0}, 
+    device_map="auto", 
     quantization_config=quantization_config,
-    trust_remote_code=True
+    trust_remote_code=True,
+    token=TOKEN
 )
 model.eval()
 

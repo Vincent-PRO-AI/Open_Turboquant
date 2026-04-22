@@ -146,7 +146,27 @@ if _TR_AVAIL:
             B, H, T, _ = k_sk.shape; L = int(math.log2(D)); dev = k_sk.device; dtype = k_sk.dtype
             k_sk = k_sk.contiguous(); bd_flat = boundaries.to(dev).contiguous()
             
-            # Pack offsets calculation
+            # 🚀 Chunking Strategy for Long Context
+            CHUNK_SIZE = 512
+            if T > CHUNK_SIZE:
+                R_out = torch.empty(B, H, T, 1, device=dev, dtype=dtype)
+                p_a_list = [[] for _ in range(L)]
+                
+                # Pre-allocate one scratch buffer for all chunks
+                if scratch is None:
+                    scratch = torch.empty(B * H * CHUNK_SIZE * 16384, device=dev, dtype=torch.float32)
+                
+                for start in range(0, T, CHUNK_SIZE):
+                    end = min(start + CHUNK_SIZE, T)
+                    k_chunk = k_sk[:, :, start:end, :].contiguous()
+                    r_c, p_c = triton_polar_encode(k_chunk, boundaries, D, bits, scratch=scratch[:B*H*(end-start)*16384])
+                    R_out[:, :, start:end, :] = r_c
+                    for lv in range(L): p_a_list[lv].append(p_c[lv])
+                
+                p_a = [torch.cat(p_a_list[lv], dim=2) for lv in range(L)]
+                return R_out, p_a
+
+            # Pack offsets calculation (standard path)
             offsets = [0]
             for lv in range(L):
                 n_p = D >> (lv+1); ppp = max(1, (n_p * int(bits)) // 8); offsets.append(offsets[-1] + B * H * T * ppp)
@@ -155,7 +175,6 @@ if _TR_AVAIL:
             R_out = torch.empty(B, H, T, 1, device=dev, dtype=dtype)
             P_base = torch.empty(offsets[-1], device=dev, dtype=torch.uint8)
             
-            # Use provided scratch or allocate a temporary one
             if scratch is None:
                 scratch = torch.empty(B * H * T * 16384, device=dev, dtype=torch.float32)
             
@@ -182,6 +201,18 @@ if _TR_AVAIL:
     def triton_polar_decode(R_out: torch.Tensor, p_a: List[torch.Tensor], centroids: torch.Tensor, D: int, bits: int):
         if is_triton_available() and R_out.is_cuda:
             B, H, T, _ = R_out.shape; L = int(math.log2(D)); dev = R_out.device; dtype = R_out.dtype
+            
+            # 🚀 Chunking Strategy for Long Context
+            CHUNK_SIZE = 512
+            if T > CHUNK_SIZE:
+                K_out = torch.empty(B, H, T, D, device=dev, dtype=dtype)
+                for start in range(0, T, CHUNK_SIZE):
+                    end = min(start + CHUNK_SIZE, T)
+                    p_a_chunk = [p[:, :, start:end, :] for p in p_a]
+                    k_c = triton_polar_decode(R_out[:, :, start:end, :], p_a_chunk, centroids, D, bits)
+                    K_out[:, :, start:end, :] = k_c
+                return K_out
+
             R_out = R_out.contiguous(); ct_flat = centroids.to(dev).contiguous()
             offsets = [0]
             for lv in range(L):

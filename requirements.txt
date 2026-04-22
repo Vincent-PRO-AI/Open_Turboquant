@@ -9,3 +9,4 @@ tqdm>=4.65.0
 sentencepiece
 protobuf
 accelerate>=0.28.0
+datasets
