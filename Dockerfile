@@ -1,4 +1,4 @@
-FROM pytorch/pytorch:2.11.0-cuda13.1-cudnn9-devel
+FROM pytorch/pytorch:2.9.1-cuda13.0-cudnn9-devel
 
 # Set non-interactive to avoid prompt hangs
 ENV DEBIAN_FRONTEND=noninteractive
@@ -19,6 +19,9 @@ COPY requirements.txt .
 # Install dependencies natively under Linux
 # Triton will install successfully here
 RUN pip install -r requirements.txt
+
+# Copy the entire workspace to allow pip install -e . to find setup.py
+COPY . .
 
 # Pre-install core library for development mode
 RUN pip install -e .

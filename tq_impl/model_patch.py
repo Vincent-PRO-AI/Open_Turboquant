@@ -28,11 +28,16 @@ from .cache import TurboQuantCache
 # ---------------------------------------------------------------------------
 
 _ATTENTION_NAMES = (
-    "Attention", "SelfAttention", "SdpaAttention", "FlashAttention2", "Llama", "Mistral", "Qwen2", "Gemma",
-    "Phi3Attention", "GemmaAttention", "Gemma2Attention", 
+    "Attention", "SelfAttention", "SdpaAttention", "FlashAttention2",
+    "LlamaAttention", "MistralAttention", "Qwen2Attention", "GemmaAttention",
     "Gemma4Attention", "Gemma4TextAttention",
+    "Phi3Attention", "Gemma2Attention", 
     "FalconAttention", "GPTNeoXAttention", "OPTAttention",
     "BloomAttention", "GPT2Attention", "CohereAttention",
+)
+
+_BLACKLIST = (
+    "Vision", "Pooler", "Embedder", "Norm", "Linear", "MoE", "Adapter"
 )
 
 _PATCHED = "_tq_patched"
@@ -40,6 +45,12 @@ _PATCHED = "_tq_patched"
 
 def _find_attn_layers(model: torch.nn.Module) -> List[Tuple[int, torch.nn.Module]]:
     """Find attention sub-modules paired with layer index."""
+    # 🚀 Priority 1: High-Precision Backbone detection (Gemma 4 / Multimodal)
+    # Target only the Language Model blocks if present
+    lm = getattr(model, 'language_model', None)
+    if lm is not None:
+        model = lm
+    
     try:
         # Standard HF models: model.layers or model.language_model.layers
         layers = getattr(model, 'model', model).layers
@@ -54,6 +65,7 @@ def _find_attn_layers(model: torch.nn.Module) -> List[Tuple[int, torch.nn.Module
         for i, layer in enumerate(layers):
             attn = getattr(layer, 'self_attn', None) or getattr(layer, 'attention', None)
             if attn is not None:
+                # Use absolute layer index if possible
                 results.append((i, attn))
         if results:
             return results
@@ -61,7 +73,20 @@ def _find_attn_layers(model: torch.nn.Module) -> List[Tuple[int, torch.nn.Module
     results, seen, idx = [], set(), 0
     for name, module in model.named_modules():
         cls = type(module).__name__
-        if any(s in cls for s in _ATTENTION_NAMES) and id(module) not in seen:
+        # 🚀 Fix: Stricter matching for multimodal models
+        # 1. Must be in the whitelist
+        is_attn = any(s in cls for s in _ATTENTION_NAMES)
+        # 2. MUST NOT be in the blacklist (Vision, Poolers, etc.)
+        is_blacklisted = any(b in cls for b in _BLACKLIST)
+        
+        # 🛡️ Level 2 Protection: Ensure it has projection layers
+        has_projs = hasattr(module, "q_proj") and hasattr(module, "k_proj") and hasattr(module, "v_proj")
+        # Ensure they are not None (common in some complex architectures)
+        if has_projs:
+            has_projs = module.q_proj is not None and module.k_proj is not None and module.v_proj is not None
+
+        if is_attn and not is_blacklisted and has_projs and id(module) not in seen:
+            print(f"[TurboQuant] Patching Backbone Layer: {name} ({cls})", flush=True)
             seen.add(id(module))
             results.append((idx, module))
             idx += 1
@@ -156,14 +181,15 @@ def _fused_decode(
     k = self_attn.k_proj(hidden_states)
     v = self_attn.v_proj(hidden_states)
 
-    # Support for architecture-specific norms (e.g. Gemma 4)
-    if hasattr(self_attn, "q_norm"): q = self_attn.q_norm(q)
-    if hasattr(self_attn, "k_norm"): k = self_attn.k_norm(k)
-    if hasattr(self_attn, "v_norm"): v = self_attn.v_norm(v)
-
     q = q.view(B, 1, num_heads, head_dim).transpose(1, 2)
     k = k.view(B, 1, num_kv_heads, head_dim).transpose(1, 2)
     v = v.view(B, 1, num_kv_heads, head_dim).transpose(1, 2)
+
+    # Support for architecture-specific norms (e.g. Gemma 4)
+    # Must be applied per-head (after reshaping to head_dim)
+    if hasattr(self_attn, "q_norm"): q = self_attn.q_norm(q)
+    if hasattr(self_attn, "k_norm"): k = self_attn.k_norm(k)
+    if hasattr(self_attn, "v_norm"): v = self_attn.v_norm(v)
 
     # 🚀 v10 Optimization: inform cache of sliding window limits (Gemma-4 style)
     if hasattr(self_attn, "sliding_window") and self_attn.sliding_window:
@@ -187,17 +213,31 @@ def _fused_decode(
 
     # Update cache: k, v are stored (rotated), quantized values returned
     vals = cache.update_compressed(k, v, layer_idx)
+    
+    # 🚀 v11: Fallback for D > 256 (Gemma 4 Heterogeneous)
+    # If the layer dim exceeds 256, we bypassed polar allocation.
+    # Return to standard attention for this layer.
+    if vals.shape[-1] > 256:
+        # Standard Attention Fallback
+        attn_weights = torch.matmul(q, vals.transpose(2, 3)) * scale
+        if attention_mask is not None:
+            attn_weights = attn_weights + attention_mask
+        attn_weights = F.softmax(attn_weights, dim=-1, dtype=torch.float32).to(dtype)
+        out = torch.matmul(attn_weights, vals)
+        out = out.transpose(1, 2).contiguous().view(B, 1, num_heads * head_dim)
+        return self_attn.o_proj(out)
 
     # 🚀 v10 Fused scores [B, H_q, 1, T] — directly on packed data
     scores = cache.fused_scores(q, layer_idx) * scale
 
     if attention_mask is not None:
-        # Prevent nan + -inf = nan issues
-        attention_mask = attention_mask.to(scores.dtype)
-        scores = scores + attention_mask
+        # Match dimensions [B, H, 1, T]
+        m = attention_mask.to(scores.dtype)
+        if m.shape[-1] > scores.shape[-1]: m = m[..., -scores.shape[-1]:]
+        scores = scores + m
 
     # Stability: clamp scores before softmax
-    scores = torch.clamp(scores, min=-32000, max=32000)
+    scores = torch.clamp(scores, min=-65000, max=65000)
     weights = F.softmax(scores, dim=-1, dtype=torch.float32).to(dtype)
 
     # GQA: repeat KV heads for value matmul
@@ -245,14 +285,22 @@ def _make_patched_fwd(original_fwd, layer_idx: int, cache_ref):
         if is_tq and q_len == 1 and layer_idx == 0:
             print(f"DEBUG[Patch] tq_type={type(tq).__name__} q_len={q_len} output_attentions={output_attentions}", flush=True)
 
-        if (is_tq and hidden_states is not None):
+        if is_tq and hidden_states is not None and q_len == 1:
             hd = getattr(self, 'head_dim', None)
-            nh = getattr(self, 'num_heads', None)
+            
+            # Robust extraction of num_heads and num_kv_heads via projection shapes
+            if hd is not None:
+                q_shape_test = self.q_proj(hidden_states).shape[-1]
+                k_shape_test = self.k_proj(hidden_states).shape[-1]
+                nh = q_shape_test // hd
+                nkv = k_shape_test // hd
+            else:
+                nh = getattr(self, 'num_heads', getattr(self, 'num_attention_heads', None))
+                nkv = getattr(self, 'num_key_value_heads', getattr(self, 'num_kv_heads', nh))
             
             # DEBUG
             if layer_idx == 0: print(f"DEBUG[Patch] Entered fused block! hd={hd} nh={nh}", flush=True)
 
-            nkv = getattr(self, 'num_key_value_heads', getattr(self, 'num_kv_heads', nh))
             sc = getattr(self, 'scaling', None) or (1.0 / math.sqrt(hd)) if hd else None
 
             if hd and nh and sc is not None:
@@ -261,7 +309,9 @@ def _make_patched_fwd(original_fwd, layer_idx: int, cache_ref):
                 
                 out = _fused_decode(self, hidden_states, kwargs.get('attention_mask'),
                                     tq, layer_idx, hd, nh, nkv, sc, pos_emb)
-                return (out, None, tq) if use_cache else (out, None)
+                
+                # TurboQuant Elite V3: Fused scores successfully computed
+                return (out, None)
 
         # 4. Fallback: pass the TurboQuantCache correctly to the original forward
         if isinstance(tq, TurboQuantCache):

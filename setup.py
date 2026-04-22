@@ -16,7 +16,7 @@ setup(
     long_description_content_type="text/markdown",
     author="Vincent Soule",
     author_email="vincent.soule@arkanecloud.com",
-    url="https://github.com/vincentsoule/turboquant",
+    url="https://github.com/Vincent-PRO-AI/Open_Turboquant",
     packages=find_packages(),
     python_requires=">=3.9",
     install_requires=[

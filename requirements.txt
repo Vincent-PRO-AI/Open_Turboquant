@@ -8,3 +8,4 @@ numpy>=1.24.0
 tqdm>=4.65.0
 sentencepiece
 protobuf
+accelerate>=0.28.0

@@ -2,7 +2,7 @@ import torch
 import triton
 import triton.language as tl
 import math
-from typing import List
+from typing import List, Optional
 
 try:
     from triton.language.extra import libdevice
@@ -23,9 +23,12 @@ if _TR_AVAIL:
         snxb, snxh, snxt, snxd,
         snrb, snrh, snrt
     ):
-        pid_t = tl.program_id(0); pid_h = tl.program_id(1); pid_b = tl.program_id(2)
+        pid_t = tl.program_id(0).to(tl.int64); pid_h = tl.program_id(1).to(tl.int64); pid_b = tl.program_id(2).to(tl.int64)
         if pid_t >= T: return
-        s_base = S_ptr + (pid_b * H * T + pid_h * T + pid_t) * 16384
+        
+        # 🚀 Fix: Safe 16KB Stride Alignment
+        idx_64 = (pid_b * H * T + pid_h * T + pid_t)
+        s_base = S_ptr + idx_64 * 16384
         x_base = X_ptr + pid_b * snxb + pid_h * snxh + pid_t * snxt
         
         PI = 3.14159265358979323846
@@ -64,7 +67,8 @@ if _TR_AVAIL:
             tl.debug_barrier()
             
             # Pack
-            p_offs = tl.load(O_ptr + lv) + (pid_b * (H * T) + pid_h * T + pid_t) * (max(1, (n_pairs * int(bits)) // 8))
+            n_pairs_64 = n_pairs.to(tl.int64)
+            p_offs = tl.load(O_ptr + lv).to(tl.int64) + idx_64 * (max(1, (n_pairs_64 * int(bits)) // 8))
             k64 = tl.arange(0, 64)
             m_pack = k64 < (max(1, n_pairs // 2))
             v0 = tl.load(s_base + idx_offset + 2 * k64, mask=(2*k64 < n_pairs), other=0).to(tl.int32)
@@ -88,9 +92,11 @@ if _TR_AVAIL:
         snrb, snrh, snrt,
         snkb, snkh, snkt, snkd
     ):
-        pid_t = tl.program_id(0); pid_h = tl.program_id(1); pid_b = tl.program_id(2)
+        pid_t = tl.program_id(0).to(tl.int64); pid_h = tl.program_id(1).to(tl.int64); pid_b = tl.program_id(2).to(tl.int64)
         if pid_t >= T: return
-        s_base = S_ptr + (pid_b * H * T + pid_h * T + pid_t) * 16384
+        
+        idx_64 = (pid_b * H * T + pid_h * T + pid_t)
+        s_base = S_ptr + idx_64 * 16384
         
         rf = tl.load(R_ptr + pid_b * snrb + pid_h * snrh + pid_t * snrt).to(tl.float32)
         tl.store(s_base + L * 256, rf)
@@ -103,7 +109,8 @@ if _TR_AVAIL:
             w_offset = lv * 256
             idx_offset = 8192 + lv * 128
             
-            p_offs = tl.load(O_ptr + lv) + (pid_b * (H * T) + pid_h * T + pid_t) * (max(1, (n_pairs * int(bits)) // 8))
+            n_pairs_64 = n_pairs.to(tl.int64)
+            p_offs = tl.load(O_ptr + lv).to(tl.int64) + idx_64 * (max(1, (n_pairs_64 * int(bits)) // 8))
             k64 = tl.arange(0, 64)
             m_pack = k64 < (max(1, n_pairs // 2))
             pb = tl.load(P_ptr + p_offs + k64, mask=m_pack, other=0).to(tl.int32)
@@ -134,17 +141,24 @@ if _TR_AVAIL:
         final_vals = tl.load(s_base + o256, mask=o256 < D).to(K_ptr.dtype.element_ty)
         tl.store(k_out_base + o256 * snkd, final_vals, mask=o256 < D)
 
-    def triton_polar_encode(k_sk: torch.Tensor, boundaries: torch.Tensor, D: int, bits: int):
+    def triton_polar_encode(k_sk: torch.Tensor, boundaries: torch.Tensor, D: int, bits: int, scratch: Optional[torch.Tensor] = None):
         if is_triton_available() and k_sk.is_cuda:
             B, H, T, _ = k_sk.shape; L = int(math.log2(D)); dev = k_sk.device; dtype = k_sk.dtype
             k_sk = k_sk.contiguous(); bd_flat = boundaries.to(dev).contiguous()
+            
+            # Pack offsets calculation
             offsets = [0]
             for lv in range(L):
                 n_p = D >> (lv+1); ppp = max(1, (n_p * int(bits)) // 8); offsets.append(offsets[-1] + B * H * T * ppp)
             offsets_t = torch.tensor(offsets[:-1], dtype=torch.int64, device=dev)
+            
             R_out = torch.empty(B, H, T, 1, device=dev, dtype=dtype)
             P_base = torch.empty(offsets[-1], device=dev, dtype=torch.uint8)
-            scratch = torch.empty(B * H * T * 16384, device=dev, dtype=torch.float32)
+            
+            # Use provided scratch or allocate a temporary one
+            if scratch is None:
+                scratch = torch.empty(B * H * T * 16384, device=dev, dtype=torch.float32)
+            
             with torch.cuda.device(dev):
                 _triton_polar_encode_kernel_v3[(T, H, B)](
                     k_sk, R_out, P_base, offsets_t, bd_flat, scratch, 
