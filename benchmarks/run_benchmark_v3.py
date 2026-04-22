@@ -159,6 +159,7 @@ def run_baseline(ids):
                 past = None
                 for start in range(0, ids.shape[1] - 1, CHUNK_SIZE):
                     end = min(start + CHUNK_SIZE, ids.shape[1] - 1)
+                    if start >= end: break
                     out_f = model(ids[:, start:end], past_key_values=past, use_cache=True)
                     past = out_f.past_key_values
                 out = model.generate(ids[:, -1:], past_key_values=past, max_new_tokens=MAX_NEW_TOKENS, do_sample=False, use_cache=True)
@@ -190,6 +191,7 @@ def run_tq(ids, bits, fused=False):
             if ids.shape[1] > CHUNK_SIZE:
                 for start in range(0, ids.shape[1] - 1, CHUNK_SIZE):
                     end = min(start + CHUNK_SIZE, ids.shape[1] - 1)
+                    if start >= end: break
                     model(ids[:, start:end], past_key_values=cache, use_cache=True)
                 # Last token and generate
                 out = model.generate(

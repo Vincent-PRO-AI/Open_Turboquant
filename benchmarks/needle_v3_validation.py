@@ -81,6 +81,7 @@ def main():
     with torch.inference_mode():
         for start_idx in range(0, T_total - 1, CHUNK_SIZE):
             end_idx = min(start_idx + CHUNK_SIZE, T_total - 1)
+            if start_idx >= end_idx: break
             chunk = input_ids[:, start_idx:end_idx]
             # Standard forward to fill cache
             model(chunk, past_key_values=cache, use_cache=True)
