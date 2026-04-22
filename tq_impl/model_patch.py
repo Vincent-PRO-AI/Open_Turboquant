@@ -304,11 +304,12 @@ def _make_patched_fwd(original_fwd, layer_idx: int, cache_ref):
             sc = getattr(self, 'scaling', None) or (1.0 / math.sqrt(hd)) if hd else None
 
             if hd and nh and sc is not None:
-                # Capture position_embeddings for Gemma 4 (2nd arg)
-                pos_emb = args[1] if len(args) > 1 else kwargs.get('position_embeddings')
-                
-                out = _fused_decode(self, hidden_states, kwargs.get('attention_mask'),
-                                    tq, layer_idx, hd, nh, nkv, sc, pos_emb)
+                out = _fused_decode(
+                    self, hidden_states, kwargs.get('attention_mask'),
+                    cache=tq, layer_idx=layer_idx, head_dim=hd, 
+                    num_heads=nh, num_kv_heads=nkv, 
+                    scale=sc, position_embeddings=pos_emb
+                )
                 
                 # TurboQuant Elite V3: Fused scores successfully computed
                 return (out, None)
