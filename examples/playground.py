@@ -7,7 +7,7 @@ Compare generation quality and memory between:
   - TurboQuant 4-bit (3b MSE + 1b QJL) = 3.0x compression
   - TurboQuant 3-bit (2b MSE + 1b QJL) = 4.9x compression
 
-Usage:  python playground.py [--model MODEL_ID] [--tokens 100]
+Usage:  python playground.py [--model MODEL_ID] [--tokens 100] [--load_4bit] [--token HF_TOKEN]
 """
 import argparse
 import time
@@ -96,12 +96,16 @@ def run_turboquant(model, tokenizer, prompt, bits_key, max_new_tokens):
     mem_after = get_gpu_mem_mb()
 
     unpatch_model_for_turboquant(model)
-
-    cr = compression_ratio(int(bits_key) - 1, 128)
+    
+    # 🚀 Dynamic head_dim from config
+    head_dim = getattr(model.config, "head_dim", getattr(model.config, "hidden_size", 0) // getattr(model.config, "num_attention_heads", 1))
+    cr = compression_ratio(int(bits_key) - 1, head_dim)
+    
     return dict(
         text=text, tokens=n_tok, time=elapsed,
         tok_s=n_tok / elapsed,
         cache_mb=mem_after - mem_before,
+        vram_peak=torch.cuda.max_memory_allocated() / 1024**2,
         label=f"TurboQuant {bits_key:.0f}-bit (keys {cr:.1f}x)",
     )
 
@@ -114,6 +118,10 @@ def main():
                         help="Max new tokens to generate")
     parser.add_argument("--prompt", default=None,
                         help="Custom prompt (default: built-in)")
+    parser.add_argument("--load_4bit", action="store_true",
+                        help="Load model weights in 4-bit (bitsandbytes)")
+    parser.add_argument("--token", default=None,
+                        help="HuggingFace token for gated models")
     args = parser.parse_args()
 
     prompt = args.prompt or (
@@ -134,12 +142,24 @@ def main():
 
     # Load model
     print("Loading model...")
-    tokenizer = AutoTokenizer.from_pretrained(args.model)
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model,
-        torch_dtype=torch.float16,
-        device_map="auto",
-    )
+    tokenizer = AutoTokenizer.from_pretrained(args.model, token=args.token)
+    
+    loader_kwargs = {
+        "torch_dtype": torch.float16,
+        "device_map": "auto",
+        "token": args.token,
+        "trust_remote_code": True,
+    }
+    if args.load_4bit:
+        from transformers import BitsAndBytesConfig
+        loader_kwargs["quantization_config"] = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_use_double_quant=True,
+        )
+    
+    model = AutoModelForCausalLM.from_pretrained(args.model, **loader_kwargs)
     print(f"Model loaded. VRAM used: {get_gpu_mem_mb():.0f} MB\n")
 
     # --- Run benchmarks ---
