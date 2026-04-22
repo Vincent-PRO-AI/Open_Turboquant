@@ -63,22 +63,16 @@ sys.path.insert(0, ".")
 
 try:
     from tq_impl import (
-        TurboQuantMSE, TurboQuantProd, PackedKeys,
         TurboQuantCache,
+        AutoTurboQuant,
         patch_model_for_turboquant, unpatch_model_for_turboquant,
-        get_codebook, get_boundaries, expected_mse,
-        compression_ratio, packed_bytes_per_position,
-        recursive_polar_transform, recursive_polar_inverse,
-        PolarAngleQuantizer,
-        ValueQuantizer,
+        compression_ratio,
         is_triton_available, triton_version,
     )
-    print("OK: tq_impl.core exports")
-    print("  - TurboQuantMSE, TurboQuantProd, PackedKeys")
-    print("OK: tq_impl.cache exports")
-    print("  - TurboQuantCache, patch/unpatch_model_for_turboquant")
-    print("OK: tq_impl utilities")
-    print("  - codebook, bitpack, polar, value_quant, triton_polar")
+    print("OK: tq_impl exports")
+    print("  - TurboQuantCache, AutoTurboQuant")
+    print("  - patch/unpatch_model_for_turboquant")
+    print("  - utilities")
     print(f"OK: Triton available: {is_triton_available()}")
     print(f"OK: Triton version: {triton_version()}")
 except Exception as e:
