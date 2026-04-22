@@ -150,7 +150,20 @@ def run_baseline(ids):
     try:
         t0 = time.perf_counter()
         with torch.inference_mode():
-            out = model.generate(ids, max_new_tokens=MAX_NEW_TOKENS, do_sample=False, use_cache=True)
+            # 🚀 Chunked Prefill for Baseline
+            CHUNK_SIZE = 1024
+            if ids.shape[1] > CHUNK_SIZE:
+                # We need a dummy cache to do chunking in native HF
+                # No, we can just use the internal cache
+                # transformers handles this if we pass use_cache=True
+                past = None
+                for start in range(0, ids.shape[1] - 1, CHUNK_SIZE):
+                    end = min(start + CHUNK_SIZE, ids.shape[1] - 1)
+                    out_f = model(ids[:, start:end], past_key_values=past, use_cache=True)
+                    past = out_f.past_key_values
+                out = model.generate(ids[:, -1:], past_key_values=past, max_new_tokens=MAX_NEW_TOKENS, do_sample=False, use_cache=True)
+            else:
+                out = model.generate(ids, max_new_tokens=MAX_NEW_TOKENS, do_sample=False, use_cache=True)
         torch.cuda.synchronize()
         dt = time.perf_counter() - t0
     except torch.cuda.OutOfMemoryError:
@@ -172,10 +185,22 @@ def run_tq(ids, bits, fused=False):
     try:
         t0 = time.perf_counter()
         with torch.inference_mode():
-            out = model.generate(
-                ids, past_key_values=cache,
-                max_new_tokens=MAX_NEW_TOKENS, do_sample=False, use_cache=True,
-            )
+            # 🚀 Chunked Prefill for Long Context
+            CHUNK_SIZE = 1024
+            if ids.shape[1] > CHUNK_SIZE:
+                for start in range(0, ids.shape[1] - 1, CHUNK_SIZE):
+                    end = min(start + CHUNK_SIZE, ids.shape[1] - 1)
+                    model(ids[:, start:end], past_key_values=cache, use_cache=True)
+                # Last token and generate
+                out = model.generate(
+                    ids[:, -1:], past_key_values=cache,
+                    max_new_tokens=MAX_NEW_TOKENS, do_sample=False, use_cache=True,
+                )
+            else:
+                out = model.generate(
+                    ids, past_key_values=cache,
+                    max_new_tokens=MAX_NEW_TOKENS, do_sample=False, use_cache=True,
+                )
         torch.cuda.synchronize()
         dt = time.perf_counter() - t0
     except torch.cuda.OutOfMemoryError:

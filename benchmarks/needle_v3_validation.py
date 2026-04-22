@@ -66,16 +66,35 @@ def main():
     print(f"Haystack ready. Total tokens: {actual_ctx}")
     print(f"Needle inserted at ~{args.pos*100}% depth.")
 
-    # Run with TurboQuant
-    cache = TurboQuantCache(bits=args.bits, dtype=model.dtype, max_seq_len=actual_ctx + 64)
+    # Prepare chunks for prefill to avoid SDPA OOM (128GB+ spike)
+    # We process in chunks of 2048 tokens
+    CHUNK_SIZE = 2048
+    input_ids = inputs.input_ids
+    T_total = input_ids.shape[1]
+    
+    cache = TurboQuantCache(bits=args.bits, dtype=model.dtype, max_seq_len=T_total + 64)
     patch_model_for_turboquant(model, cache)
     
-    print("\n--- RETRIEVAL TEST (NEEDLE) ---")
+    print(f"\n--- RETRIEVAL TEST (NEEDLE) ---")
+    print(f"Phase: Chunked Prefill ({T_total} tokens)...")
+    
     with torch.inference_mode():
+        for start_idx in range(0, T_total - 1, CHUNK_SIZE):
+            end_idx = min(start_idx + CHUNK_SIZE, T_total - 1)
+            chunk = input_ids[:, start_idx:end_idx]
+            # Standard forward to fill cache
+            model(chunk, past_key_values=cache, use_cache=True)
+            if start_idx % 8192 == 0:
+                print(f"  Processed {end_idx}/{T_total} tokens...")
+
+    print("Phase: Generation (Retrieving Needle)...")
+    with torch.inference_mode():
+        # Last token and generate
+        last_token = input_ids[:, -1:]
         outputs = model.generate(
-            **inputs,
+            last_token,
             past_key_values=cache,
-            max_new_tokens=5,
+            max_new_tokens=15,
             do_sample=False
         )
     
