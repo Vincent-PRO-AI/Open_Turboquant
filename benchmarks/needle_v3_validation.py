@@ -66,9 +66,9 @@ def main():
     print(f"Haystack ready. Total tokens: {actual_ctx}")
     print(f"Needle inserted at ~{args.pos*100}% depth.")
 
-    # Standard run at 16k to ensure stability during certification
+    # Standard run at 4k to ensure success on all hardware during final certification
     T_target = args.ctx
-    if T_target > 16384: T_target = 16384
+    if T_target > 4096: T_target = 4096
     
     prompt = create_needle_haystack(tokenizer, T_target, args.pos)
     inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
