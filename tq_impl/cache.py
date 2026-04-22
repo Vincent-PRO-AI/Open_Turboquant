@@ -191,7 +191,8 @@ class TurboQuantCache:
         s = torch.sign(u); s = torch.where(s==0, torch.ones_like(s), s)
         return pack_1bit(s.to(torch.int8)), torch.abs(u).mean(dim=-1, keepdim=True)
 
-    def update(self, key_states, value_states, i, cache_kwargs=None):
+    def update(self, key_states, value_states, layer_idx, cache_kwargs=None):
+        i = layer_idx
         B, H, T_new, D = key_states.shape; device = key_states.device
         # 🚀 Optimization: Lean Outliers for Gemma-4
         self.num_outlier_pairs = 8
