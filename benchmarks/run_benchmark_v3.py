@@ -20,7 +20,7 @@ if root not in sys.path:
 
 MODEL_ID       = "google/gemma-4-31B-it"
 MAX_NEW_TOKENS = 64
-CONTEXT_SIZES  = [1024, 8192, 32768]
+CONTEXT_SIZES  = [1024, 4096, 16384]
 BIT_MODES      = [4, 3]     # Test 4-bit first (better quality), then 3-bit
 TEST_FUSED     = True
 TOKEN          = os.getenv("HF_TOKEN")
