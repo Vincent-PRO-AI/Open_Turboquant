@@ -74,7 +74,7 @@ try:
     print("  - patch/unpatch_model_for_turboquant")
     print("  - utilities")
     print(f"OK: Triton available: {is_triton_available()}")
-    print(f"OK: Triton version: {triton_version()}")
+    print(f"OK: Triton version: {triton_version}")
 except Exception as e:
     print(f"ERROR: Import failed: {e}")
     import traceback
