@@ -63,8 +63,8 @@ Verified on **Dual NVIDIA RTX 6000 Blackwell** (96GB per GPU, 192GB VRAM total).
 The most robust way to deploy TurboQuant (especially on cloud instances like Verda, Vast.ai, or RunPod with RTX 6000 Ada/Blackwell GPUs) is via Docker.
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/Vincent-PRO-AI/Open_Turboquant.git
+# 1. Clone the repository (V3 Branch for Blackwell testing)
+git clone -b v3-blackwell https://github.com/Vincent-PRO-AI/Open_Turboquant.git
 cd Open_Turboquant
 
 # 2. Build the optimized GPU container (CUDA 13.0)
