@@ -258,3 +258,11 @@ class TurboQuantCache:
                 if v is not None and hasattr(v, 'element_size'):
                     total += v.nelement() * v.element_size()
         return total
+
+    @property
+    def key_cache(self) -> List[Any]:
+        return [None] * max(1, len(self._cur_len))
+        
+    @property
+    def value_cache(self) -> List[Any]:
+        return [None] * max(1, len(self._cur_len))
