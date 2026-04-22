@@ -240,5 +240,21 @@ class TurboQuantCache:
         qs = unpack_1bit(p_qjl, D).to(self.dtype); corr = (qs @ proj.T) * g
         k_perm = k_rs + corr; i_perm = torch.argsort(self._to_dev(self._permutations[i], dev)); return k_perm[..., i_perm]
 
-    def get_seq_length(self, i=0): return self._cur_len.get(i, 0)
+    def get_seq_length(self, layer_idx=0): return self._cur_len.get(layer_idx, 0)
+    def get_max_length(self): return self.max_seq_len
     def get_mask_sizes(self, q_len, layer_idx=0): return self.get_seq_length(layer_idx) + (q_len.shape[0] if torch.is_tensor(q_len) else q_len), 0
+    def __len__(self): return len(self._cur_len)
+    
+    @property
+    def seen_tokens(self) -> int:
+        return self._seen_tokens
+        
+    def memory_footprint(self) -> int:
+        total = 0
+        for buf_dict in [self._final_radii_buf, self._packed_angles_buf, self._packed_qjl_buf, 
+                         self._qjl_gammas_buf, self._values_buf, self._value_states_buf, 
+                         self._outlier_vals_buf, self._outlier_idx_buf]:
+            for v in buf_dict.values():
+                if v is not None and hasattr(v, 'element_size'):
+                    total += v.nelement() * v.element_size()
+        return total
