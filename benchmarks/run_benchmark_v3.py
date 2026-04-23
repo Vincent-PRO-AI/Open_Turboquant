@@ -150,17 +150,14 @@ def run_baseline(ids):
     try:
         t0 = time.perf_counter()
         with torch.inference_mode():
-            # 🚀 Robust Chunked Prefill
-            CHUNK_SIZE = 1024
-            if ids.shape[1] > CHUNK_SIZE:
+            # 🚀 Standard Prefill for Blackwell (Chunking only for >16k)
+            if ids.shape[1] > 16384:
                 past = None
-                # All tokens EXCEPT the last one
-                for i in range(0, ids.shape[1] - 1, CHUNK_SIZE):
-                    chunk = ids[:, i:min(i + CHUNK_SIZE, ids.shape[1] - 1)]
+                for i in range(0, ids.shape[1] - 1, 4096):
+                    chunk = ids[:, i:min(i + 4096, ids.shape[1] - 1)]
                     if chunk.shape[1] == 0: continue
                     out_f = model(chunk, past_key_values=past, use_cache=True)
                     past = out_f.past_key_values
-                # Final token + generation
                 out = model.generate(ids[:, -1:], past_key_values=past, max_new_tokens=MAX_NEW_TOKENS, do_sample=False, use_cache=True)
             else:
                 out = model.generate(ids, max_new_tokens=MAX_NEW_TOKENS, do_sample=False, use_cache=True)
@@ -185,11 +182,10 @@ def run_tq(ids, bits, fused=False):
     try:
         t0 = time.perf_counter()
         with torch.inference_mode():
-            # 🚀 Robust Chunked Prefill for TurboQuant
-            CHUNK_SIZE = 1024
-            if ids.shape[1] > CHUNK_SIZE:
-                for i in range(0, ids.shape[1] - 1, CHUNK_SIZE):
-                    chunk = ids[:, i:min(i + CHUNK_SIZE, ids.shape[1] - 1)]
+            # 🚀 Standard Prefill for Blackwell (Chunking only for >16k)
+            if ids.shape[1] > 16384:
+                for i in range(0, ids.shape[1] - 1, 4096):
+                    chunk = ids[:, i:min(i + 4096, ids.shape[1] - 1)]
                     if chunk.shape[1] == 0: continue
                     model(chunk, past_key_values=cache, use_cache=True)
                 out = model.generate(ids[:, -1:], past_key_values=cache, max_new_tokens=MAX_NEW_TOKENS, do_sample=False, use_cache=True)
