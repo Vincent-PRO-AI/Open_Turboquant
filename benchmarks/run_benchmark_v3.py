@@ -341,7 +341,7 @@ print(f"{'=' * 78}")
 print(f"  Modèle        : {MODEL_ID}")
 print(f"  GPU           : {torch.cuda.get_device_properties(0).name}")
 print(f"  VRAM          : {total_vram:.1f} Go totale, {model_vram:.2f} Go modèle")
-print(f"  Triton        : {'v' + triton_version() if is_triton_available() else 'non'}")
+print(f"  Triton        : {'v' + triton_version if is_triton_available() else 'non'}")
 for b in BIT_MODES:
     cr = compression_ratio(b - 1, 128)
     print(f"  {b}-bit mode    : {b-1}b MSE + 1b QJL = {cr:.1f}x compression clés")
