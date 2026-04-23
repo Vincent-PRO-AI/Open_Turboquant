@@ -287,21 +287,23 @@ def _make_patched_fwd(original_fwd, layer_idx: int, cache_ref):
 
         if is_tq and hidden_states is not None and q_len == 1:
             hd = getattr(self, 'head_dim', None)
-            
             # Robust extraction of num_heads and num_kv_heads via projection shapes
+            q_out_features = self.q_proj.out_features if hasattr(self.q_proj, 'out_features') else self.q_proj(hidden_states).shape[-1]
+            k_out_features = self.k_proj.out_features if hasattr(self.k_proj, 'out_features') else self.k_proj(hidden_states).shape[-1]
+            
             if hd is not None:
-                q_shape_test = self.q_proj(hidden_states).shape[-1]
-                k_shape_test = self.k_proj(hidden_states).shape[-1]
-                nh = q_shape_test // hd
-                nkv = k_shape_test // hd
+                nh = q_out_features // hd
+                nkv = k_out_features // hd
             else:
-                nh = getattr(self, 'num_heads', getattr(self, 'num_attention_heads', None))
-                nkv = getattr(self, 'num_key_value_heads', getattr(self, 'num_kv_heads', nh))
+                # Fallback if head_dim is missing
+                nh = getattr(self, 'num_heads', getattr(self, 'num_attention_heads', 32))
+                hd = q_out_features // nh
+                nkv = k_out_features // hd
             
             # DEBUG
-            if layer_idx == 0: print(f"DEBUG[Patch] Entered fused block! hd={hd} nh={nh}", flush=True)
+            if layer_idx == 0: print(f"DEBUG[Patch] Entered fused block! hd={hd} nh={nh} nkv={nkv}", flush=True)
 
-            sc = getattr(self, 'scaling', None) or (1.0 / math.sqrt(hd)) if hd else None
+            sc = getattr(self, 'scaling', None) or (1.0 / math.sqrt(hd))
 
             if hd and nh and sc is not None:
                 # Capture position_embeddings for Gemma 4 (2nd arg)
