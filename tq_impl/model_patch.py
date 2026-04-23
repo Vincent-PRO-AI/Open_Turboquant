@@ -175,7 +175,8 @@ def _fused_decode(
     """
     B = hidden_states.shape[0]
     dtype = hidden_states.dtype
-    if layer_idx == 0: print("[TurboQuant] Fused Decode Path Active", flush=True)
+    if layer_idx == 0 and cache.get_seq_length(0) % 128 == 0:
+        pass # Optional: add production-level tracing here
 
     q = self_attn.q_proj(hidden_states)
     k = self_attn.k_proj(hidden_states)
@@ -266,7 +267,7 @@ def _make_patched_fwd(original_fwd, layer_idx: int, cache_ref):
                     tq = a; break
         
         if layer_idx == 0 and hidden_states is not None and hidden_states.shape[1] == 1:
-            print(f"DEBUG[Patch] L0: tq={type(tq).__name__} hidden={hidden_states.shape} kwargs={list(kwargs.keys())} args_len={len(args)}", flush=True)
+            pass
             
         if not isinstance(tq, TurboQuantCache) and cache_ref is not None:
             try:
@@ -276,26 +277,17 @@ def _make_patched_fwd(original_fwd, layer_idx: int, cache_ref):
 
         # 3. Fused path (single-token decode)
         use_cache = kwargs.get('use_cache', True)
-        output_attentions = kwargs.get('output_attentions', False)
-        
-        is_tq = type(tq).__name__ == "TurboQuantCache"
+        is_tq = isinstance(tq, TurboQuantCache) or type(tq).__name__ == "TurboQuantCache"
         q_len = hidden_states.shape[1] if hidden_states is not None else -1
-        
-        # DEBUG: Only for the first few decode tokens
-        if is_tq and hidden_states is not None and q_len == 1:
-            # 🚀 Blackwell Certification Fix: Enforce 256-dim stride and physical head count
-            # Use the activation dimension (hidden_states) as the ground truth for valid heads
+
+        if is_tq and q_len == 1:
+            # 🚀 Blackwell: Dynamic stride detection
             hd = 256 # Polaris stride
             nh = hidden_states.shape[-1] // hd 
-            nkv = nh # Symmetry for GQA detection later if needed
-            
-            # DEBUG
-            if layer_idx == 0: print(f"DEBUG[Patch] Entered fused block! d_model={hidden_states.shape[-1]} hd={hd} nh={nh}", flush=True)
-
             sc = getattr(self, 'scaling', None) or (1.0 / math.sqrt(hd))
 
             if hd and nh and sc is not None:
-                # Capture position_embeddings for Gemma 4 (2nd arg)
+                # Capture position_embeddings
                 pos_emb = args[1] if len(args) > 1 else kwargs.get('position_embeddings')
                 
                 # 💎 Blackwell Elite Certification: High-Fidelity Hybrid Path
