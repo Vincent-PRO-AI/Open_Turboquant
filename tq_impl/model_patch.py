@@ -283,16 +283,14 @@ def _make_patched_fwd(original_fwd, layer_idx: int, cache_ref):
         
         # DEBUG: Only for the first few decode tokens
         if is_tq and hidden_states is not None and q_len == 1:
-            # 🚀 Blackwell Certification Fix: Enforce 256-dim stride for TurboQuant V3
-            q_out_features = self.q_proj.out_features if hasattr(self.q_proj, 'out_features') else self.q_proj(hidden_states).shape[-1]
-            k_out_features = self.k_proj.out_features if hasattr(self.k_proj, 'out_features') else self.k_proj(hidden_states).shape[-1]
-            
-            hd = 256 # Correct Polaris stride
-            nh = q_out_features // hd 
-            nkv = k_out_features // hd
+            # 🚀 Blackwell Certification Fix: Enforce 256-dim stride and physical head count
+            # Use the activation dimension (hidden_states) as the ground truth for valid heads
+            hd = 256 # Polaris stride
+            nh = hidden_states.shape[-1] // hd 
+            nkv = nh # Symmetry for GQA detection later if needed
             
             # DEBUG
-            if layer_idx == 0: print(f"DEBUG[Patch] Entered fused block! hd={hd} nh={nh} nkv={nkv}", flush=True)
+            if layer_idx == 0: print(f"DEBUG[Patch] Entered fused block! d_model={hidden_states.shape[-1]} hd={hd} nh={nh}", flush=True)
 
             sc = getattr(self, 'scaling', None) or (1.0 / math.sqrt(hd))
 
