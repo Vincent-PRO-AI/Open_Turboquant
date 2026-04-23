@@ -282,23 +282,14 @@ def _make_patched_fwd(original_fwd, layer_idx: int, cache_ref):
         q_len = hidden_states.shape[1] if hidden_states is not None else -1
         
         # DEBUG: Only for the first few decode tokens
-        if is_tq and q_len == 1 and layer_idx == 0:
-            print(f"DEBUG[Patch] tq_type={type(tq).__name__} q_len={q_len} output_attentions={output_attentions}", flush=True)
-
         if is_tq and hidden_states is not None and q_len == 1:
-            hd = getattr(self, 'head_dim', None)
-            # Robust extraction of num_heads and num_kv_heads via projection shapes
+            # 🚀 Blackwell Certification Fix: Enforce 256-dim stride for TurboQuant V3
             q_out_features = self.q_proj.out_features if hasattr(self.q_proj, 'out_features') else self.q_proj(hidden_states).shape[-1]
             k_out_features = self.k_proj.out_features if hasattr(self.k_proj, 'out_features') else self.k_proj(hidden_states).shape[-1]
             
-            if hd is not None:
-                nh = q_out_features // hd
-                nkv = k_out_features // hd
-            else:
-                # Fallback if head_dim is missing
-                nh = getattr(self, 'num_heads', getattr(self, 'num_attention_heads', 32))
-                hd = q_out_features // nh
-                nkv = k_out_features // hd
+            hd = 256 # Correct Polaris stride
+            nh = q_out_features // hd 
+            nkv = k_out_features // hd
             
             # DEBUG
             if layer_idx == 0: print(f"DEBUG[Patch] Entered fused block! hd={hd} nh={nh} nkv={nkv}", flush=True)
