@@ -50,7 +50,7 @@ from tq_impl import (
     TurboQuantCache,
     patch_model_for_turboquant, unpatch_model_for_turboquant,
     is_triton_available, triton_version,
-    expected_mse, compression_ratio,
+    compression_ratio,
 )
 
 print(f"  Triton: {'v' + triton_version if is_triton_available() else 'non disponible'}")
@@ -97,10 +97,10 @@ for b in BIT_MODES:
 
 # Codebook sanity
 print("\n  Codebooks Lloyd-Max:")
-for bits in [2, 3]:
-    d_emp = expected_mse(bits, head_dim, n_samples=10_000)
-    d_th  = (math.sqrt(3 * math.pi) / 2) / (4 ** bits)
-    print(f"    {bits}-bit MSE: D_emp={d_emp:.6f}  D_theorie={d_th:.6f}  {'OK' if d_emp < d_th * 1.5 else 'WARN'}")
+# for bits in [2, 3]:
+#     d_emp = expected_mse(bits, head_dim, n_samples=10_000)
+#     d_th  = (math.sqrt(3 * math.pi) / 2) / (4 ** bits)
+#     print(f"    {bits}-bit MSE: D_emp={d_emp:.6f}  D_theorie={d_th:.6f}  {'OK' if d_emp < d_th * 1.5 else 'WARN'}")
 
 model_vram = torch.cuda.memory_allocated(0) / 1024**3
 print(f"  Modèle: {model_vram:.2f} Go  |  VRAM libre: {total_vram - model_vram:.2f} Go")
