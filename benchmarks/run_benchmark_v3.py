@@ -298,9 +298,7 @@ for bits in BIT_MODES:
         rt = run_tq(ids, bits)
         label = f"TQ{bits}b"
         if rt:
-            mem = rt.get("mem", {})
-            kcr = mem.get("key_compression_ratio", 0)
-            print(f"  {actual:>8} | {label:<18} | {rt['tps']:>6.1f}t | {rt['dt']:>5.1f}s | {rt['vram_peak']:>6.2f}Go | +{rt['kv_delta']:>7.2f}Go | {kcr:>7.1f}x")
+            print(f"  {actual:>8} | {label:<18} | {rt['tps']:>6.1f}t | {rt['dt']:>5.1f}s | {rt['vram_peak']:>6.2f}Go | +{rt['kv_delta']:>7.2f}Go | {cr:>7.1f}x")
         else:
             print(f"  {actual:>8} | {label:<18} |    OOM |     — |       — |         — |       —")
 
@@ -308,9 +306,7 @@ for bits in BIT_MODES:
             rf = run_tq(ids, bits, fused=True)
             label_f = f"TQ{bits}b fused"
             if rf:
-                mem = rf.get("mem", {})
-                kcr = mem.get("key_compression_ratio", 0)
-                print(f"  {actual:>8} | {label_f:<18} | {rf['tps']:>6.1f}t | {rf['dt']:>5.1f}s | {rf['vram_peak']:>6.2f}Go | +{rf['kv_delta']:>7.2f}Go | {kcr:>7.1f}x")
+                print(f"  {actual:>8} | {label_f:<18} | {rf['tps']:>6.1f}t | {rf['dt']:>5.1f}s | {rf['vram_peak']:>6.2f}Go | +{rf['kv_delta']:>7.2f}Go | {cr:>7.1f}x")
 
     print(f"  {'-' * 80}")
 
