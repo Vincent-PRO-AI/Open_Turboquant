@@ -309,15 +309,15 @@ def _make_patched_fwd(original_fwd, layer_idx: int, cache_ref):
                 # Capture position_embeddings for Gemma 4 (2nd arg)
                 pos_emb = args[1] if len(args) > 1 else kwargs.get('position_embeddings')
                 
-                out = _fused_decode(
-                    self, hidden_states, kwargs.get('attention_mask'),
-                    cache=tq, layer_idx=layer_idx, head_dim=hd, 
-                    num_heads=nh, num_kv_heads=nkv, 
-                    scale=sc, position_embeddings=pos_emb
-                )
-                
-                # TurboQuant Elite V3: Fused scores successfully computed
-                return (out, None)
+                # DIAGNOSTIC: Force standard attention fallback
+                # out = _fused_decode(
+                #    self, hidden_states, kwargs.get('attention_mask'),
+                #    cache=tq, layer_idx=layer_idx, head_dim=hd, 
+                #    num_heads=nh, num_kv_heads=nkv, 
+                #    scale=sc, position_embeddings=pos_emb
+                # )
+                # return (out, None)
+                pass
 
         # 4. Fallback: pass the TurboQuantCache correctly to the original forward
         if isinstance(tq, TurboQuantCache):
